@@ -43,12 +43,19 @@ create table attendance_records (
   unique (subject_id, record_date, session_index)
 );
 
+create index subjects_user_id_idx on subjects (user_id);
+create index subject_schedule_subject_id_idx on subject_schedule (subject_id);
+create index attendance_records_user_id_idx on attendance_records (user_id);
+create index attendance_records_subject_date_idx on attendance_records (subject_id, record_date desc);
+
 create function public.handle_new_user() returns trigger as $$
 begin
   insert into public.profiles (id) values (new.id);
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
+
+revoke execute on function public.handle_new_user() from public;
 
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
 
@@ -57,11 +64,11 @@ alter table subjects enable row level security;
 alter table subject_schedule enable row level security;
 alter table attendance_records enable row level security;
 
-create policy "own profile" on profiles for all using (auth.uid() = id) with check (auth.uid() = id);
-create policy "own subjects" on subjects for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own attendance" on attendance_records for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own schedule" on subject_schedule for all using (
-  exists (select 1 from subjects s where s.id = subject_schedule.subject_id and s.user_id = auth.uid())
+create policy "own profile" on profiles for all to authenticated using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
+create policy "own subjects" on subjects for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "own attendance" on attendance_records for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "own schedule" on subject_schedule for all to authenticated using (
+  exists (select 1 from subjects s where s.id = subject_schedule.subject_id and s.user_id = (select auth.uid()))
 ) with check (
-  exists (select 1 from subjects s where s.id = subject_schedule.subject_id and s.user_id = auth.uid())
+  exists (select 1 from subjects s where s.id = subject_schedule.subject_id and s.user_id = (select auth.uid()))
 );

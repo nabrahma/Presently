@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, getDay, isSameDay, isSameMonth, startOfMonth, startOfWeek, subMonths } from 'date-fns'
 import { Archive, CalendarDays, Check, ChevronLeft, ChevronRight, CircleHelp, Download, GraduationCap, Home, Moon, Plus, Settings as SettingsIcon, Sun, Trash2, WifiOff, X } from 'lucide-react'
 import { attendanceStats, safetyZone } from './lib/attendanceMath'
 import { useStore } from './lib/store'
+import { supabase } from './lib/supabaseClient'
 import type { AttendanceRecord, AttendanceStatus, ScheduleItem, Subject, SubjectType } from './types'
 import { STATUS_LABELS, SUBJECT_COLORS } from './types'
 
@@ -52,8 +53,10 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Auth() {
-  const navigate = useNavigate(); const { loadDemo } = useStore(); const [email, setEmail] = useState('')
-  return <main className="auth"><div className="auth-card"><div className="brand-mark large">P</div><p className="eyebrow">ABV-IIITM attendance</p><h1>Know where you stand.</h1><p>Presently keeps every class, percentage, and safe skip in one quiet place.</p><form onSubmit={(event) => { event.preventDefault(); navigate('/onboarding') }}><label>Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@iiitm.ac.in" /></label><button className="primary" type="submit">Continue with email</button></form><div className="auth-divider"><span>or</span></div><button className="secondary full" onClick={() => { loadDemo(); navigate('/') }}>Explore a demo</button><small>Production magic-link and password sign-in activate when Supabase keys are configured.</small></div></main>
+  const navigate = useNavigate(); const location = useLocation(); const { loadDemo, userId } = useStore(); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [notice, setNotice] = useState(''); const signUp = location.pathname.endsWith('sign-up')
+  if (userId) return <Navigate to="/onboarding" replace />
+  const submit = async (event: FormEvent) => { event.preventDefault(); if (!supabase) { navigate('/onboarding'); return }; const result = password ? signUp ? await supabase.auth.signUp({ email, password }) : await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } }); setNotice(result.error ? result.error.message : password ? 'Check your email to confirm your account, then return here.' : 'Magic link sent — open it in this browser to continue.') }
+  return <main className="auth"><div className="auth-card"><div className="brand-mark large">P</div><p className="eyebrow">ABV-IIITM attendance</p><h1>Know where you stand.</h1><p>Presently keeps every class, percentage, and safe skip in one quiet place.</p><form onSubmit={submit}><label>Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@iiitm.ac.in" /></label><label>Password <small>(optional)</small><input type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Use for password sign-in" /></label><button className="primary full" type="submit">{signUp ? 'Create account' : password ? 'Sign in with password' : 'Send magic link'}</button></form>{notice && <p className="auth-notice">{notice}</p>}<div className="auth-divider"><span>or</span></div><button className="secondary full" onClick={() => { loadDemo(); navigate('/') }}>Explore a demo</button><small>{supabase ? 'Your attendance remains private to your account.' : 'Configure Supabase keys to activate sign-in and cloud sync.'}</small></div></main>
 }
 
 function Dashboard() {
@@ -81,9 +84,9 @@ function SubjectForm({ initial, onSave, onCancel, defaultTarget = 75 }: { initia
 }
 
 function Onboarding() {
-  const navigate = useNavigate(); const { profile, saveProfile, addSubject } = useStore(); const [step, setStep] = useState(1); const [branch, setBranch] = useState(profile?.branch ?? 'CSE'); const [semester, setSemester] = useState(profile?.semester ?? 1); const [drafts, setDrafts] = useState<Omit<Subject, 'id' | 'createdAt'>[]>([])
+  const navigate = useNavigate(); const { profile, saveProfile, addSubject, userId } = useStore(); const [step, setStep] = useState(1); const [branch, setBranch] = useState(profile?.branch ?? 'CSE'); const [semester, setSemester] = useState(profile?.semester ?? 1); const [drafts, setDrafts] = useState<Omit<Subject, 'id' | 'createdAt'>[]>([])
   const saveSubject = (subject: Omit<Subject, 'id' | 'createdAt'>) => setDrafts((value) => [...value, subject])
-  const finish = () => { saveProfile({ id: profile?.id ?? crypto.randomUUID(), branch, semester, defaultTargetPercentage: profile?.defaultTargetPercentage ?? 75 }); drafts.forEach(addSubject); navigate('/') }
+  const finish = () => { saveProfile({ id: profile?.id ?? userId ?? crypto.randomUUID(), branch, semester, defaultTargetPercentage: profile?.defaultTargetPercentage ?? 75 }); drafts.forEach(addSubject); navigate('/') }
   return <main className="onboarding"><div className="onboarding-head"><NavLink to="/" className="brand"><span className="brand-mark">P</span>Presently</NavLink><span>Step {step} of 2</span></div><div className="progress"><i style={{ width: `${step * 50}%` }} /></div>{step === 1 ? <section className="wizard-card"><p className="eyebrow">A quick setup</p><h1>What are you studying?</h1><p>We’ll use this only to make Presently feel like yours.</p><label>Branch<select value={branch} onChange={(e) => setBranch(e.target.value)}><option>CSE</option><option>EEE</option><option>Mathematics & Scientific Computing</option><option>IPG-IT</option><option>Other</option></select></label><label>Current semester<input type="number" min="1" max="10" value={semester} onChange={(e) => setSemester(Number(e.target.value))} /></label><button className="primary full" onClick={() => setStep(2)}>Continue</button></section> : <section className="wizard-card wide"><p className="eyebrow">Your timetable</p><h1>Add your subjects</h1><p>Choose meeting days now. You can change every detail later.</p>{drafts.length > 0 && <div className="draft-subjects">{drafts.map((item, index) => <div key={`${item.name}-${index}`}><span className="subject-swatch" style={{ background: item.color }} /><span>{item.name}</span><button onClick={() => setDrafts((list) => list.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${item.name}`}><X size={16} /></button></div>)}</div>}<SubjectForm defaultTarget={profile?.defaultTargetPercentage ?? 75} onSave={saveSubject} />{drafts.length > 0 && <button className="primary full" onClick={finish}>Done — go to dashboard</button>}<button className="text-button back" onClick={() => setStep(1)}>Back</button></section>}</main>
 }
 
