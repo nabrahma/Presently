@@ -49,4 +49,4 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   holiday: 'Holiday'
 }
 
-export const SUBJECT_COLORS = ['#6D5EF7', '#0F766E', '#C2410C', '#2563EB', '#BE185D', '#4D7C0F', '#7C3AED', '#B45309']
+export const SUBJECT_COLORS = ['#22C55E', '#14B8A6', '#0EA5E9', '#3B82F6', '#8B5CF6', '#D946EF', '#F43F5E', '#F97316', '#F59E0B', '#84CC16', '#10B981', '#06B6D4', '#6366F1', '#EC4899', '#EF4444', '#A3A3A3']
