@@ -2,7 +2,7 @@
 
 ## Understanding
 
-Presently is a mobile-first, personal attendance-tracking PWA for ABV-IIITM students. It supports private accounts, subject schedules, one-tap daily marking, calendar backfilling, weighted attendance analytics, and the actionable per-subject safety margin for a default 75% target. It intentionally excludes ERP integrations, social features, reminders, native applications, and complex scheduling.
+Presently is a mobile-first, personal attendance-tracking PWA. It supports private accounts, subject schedules, one-tap daily marking, calendar backfilling, weighted attendance analytics, and the actionable per-subject safety margin for a default 75% target. It intentionally excludes institution integrations, social features, reminders, native applications, and complex scheduling.
 
 ## Assumptions and constraints
 

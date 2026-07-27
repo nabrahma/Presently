@@ -1,35 +1,47 @@
 # Presently
 
-Presently is a mobile-first attendance tracker for ABV-IIITM students. It is an installable PWA that turns a weekly timetable into a fast daily check-in and shows exactly where each subject stands against its attendance target.
+## Attendance, without the mental arithmetic.
 
-**Live app:** [presently-beta.vercel.app](https://presently-beta.vercel.app)
+Presently is a beautifully focused attendance tracker for people who want a clear answer before they decide to miss a class.
 
-## What it does
+Open the app. Mark what happened. See exactly where you stand.
 
-- Email magic-link authentication, with optional email/password sign-in.
-- First-run onboarding for branch, semester, subjects, attendance target, and weekly schedule.
-- One-tap `Present`, `Absent`, `Cancelled`, and `Holiday` marking for each class session.
-- Calendar-based backfilling and editing for any date.
-- Weighted overall attendance plus per-subject status, history, archive controls, and CSV export.
-- The useful answer at a glance: how many classes can be missed safely, or how many must be attended consecutively to recover.
-- Private Supabase data protected by Row Level Security.
-- Light/dark themes, offline app-shell support, a cached offline view, and an install prompt.
+**Live:** [presently-beta.vercel.app](https://presently-beta.vercel.app)
 
-## Stack
+<br />
 
-| Area | Technology |
-| --- | --- |
-| UI | React 19, TypeScript, Vite, custom accessible components, Lucide |
-| Routing | React Router |
-| Dates | date-fns |
-| Auth and data | Supabase Auth + Postgres + RLS |
-| PWA | vite-plugin-pwa / Workbox |
-| Hosting | Vercel |
-| Tests | Vitest |
+## The important number, made obvious
 
-## Quick start
+Most attendance trackers stop at a percentage. Presently goes one step further.
 
-Prerequisites: Node.js 22 or newer and npm.
+For every subject, it tells you one of two things:
+
+- **You can miss N more classes** and remain on target.
+- **Attend your next N classes** to get back on target.
+
+That is the whole point: less calculation, less uncertainty, more confidence.
+
+## Designed for the everyday
+
+Presently is built as a calm, capable utility—not a dashboard full of noise.
+
+- A fast daily check-in for every scheduled class
+- Four clear states: Present, Absent, Cancelled, Holiday
+- A calendar for catching up or correcting a past day
+- Per-subject history, targets, schedules, and archive controls
+- Weighted overall attendance, never misleading averages
+- Private sign-in with email magic links or passwords
+- CSV export, dark mode, installable PWA support, and offline cached viewing
+
+## Open source, commercially usable
+
+Presently is released under the [MIT License](LICENSE). You are free to use, modify, distribute, sell, and build on it, provided the license notice is retained.
+
+The product name and visual identity are not a promise of endorsement or affiliation with any third party.
+
+## Build it locally
+
+Requirements: Node.js 22+ and npm.
 
 ```bash
 git clone https://github.com/nabrahma/Presently.git
@@ -39,9 +51,9 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Open the local URL printed by Vite (normally `http://localhost:5173`). Without environment variables, the UI still supports local demo/onboarding flows. Add Supabase values to enable authentication and cloud sync.
+Vite will print a local URL, normally `http://localhost:5173`.
 
-## Environment variables
+## Connect Supabase
 
 Create `.env.local` from `.env.example`:
 
@@ -50,102 +62,78 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
-Only the Supabase publishable/anon key belongs in the browser. Never add a service-role key, database password, or Personal Access Token to any `VITE_*` variable, source file, or Vercel environment variable.
+The browser must only receive the publishable/anon key. Never commit a service-role key, database password, or Personal Access Token.
 
-## Supabase setup
+For a fresh project, apply the included schema:
 
-The production project is already linked and migrated. For a new Supabase project:
-
-1. Create a project in Supabase and copy its Project URL and publishable key.
-2. Add the two variables above locally and in Vercel.
-3. Generate a Supabase Personal Access Token, then link and apply the migration:
-
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref <project-ref>
-   npx supabase db push --dry-run
-   npx supabase db push
-   ```
-
-4. In **Authentication → URL Configuration**, set the Site URL and allowed redirect URL to your deployed application URL. Add `http://localhost:5173` for local development.
-
-The schema lives at [supabase/migrations/20260728_initial_schema.sql](supabase/migrations/20260728_initial_schema.sql). It creates `profiles`, `subjects`, `subject_schedule`, and `attendance_records`; indexes the ownership/look-up paths; creates a profile on signup; and applies per-user RLS policies.
-
-## Attendance rules
-
-For a subject:
-
-- `P` is the number of present records.
-- `A` is the number of absent records.
-- `T = P + A`.
-- Cancelled and holiday records are excluded from both numerator and denominator.
-- `τ` is the subject target as a fraction (75% becomes `0.75`).
-
-```text
-percentage = round(P / T × 100, 1)        when T > 0
-bunkable   = floor(P / τ − T)             when P / T ≥ τ
-comeback   = ceil((τ × T − P) / (1 − τ))  when P / T < τ
+```bash
+npx supabase login
+npx supabase link --project-ref <project-ref>
+npx supabase db push --dry-run
+npx supabase db push
 ```
 
-The dashboard percentage is weighted across all active subjects: `sum(P) / sum(T)`, not an average of subject percentages. The formulas and edge cases are covered by [attendanceMath.test.ts](src/lib/attendanceMath.test.ts).
+Then set your deployed URL in **Authentication → URL Configuration** as both the Site URL and an allowed redirect URL. Add `http://localhost:5173` for local development.
 
-> The original PRD’s 12/17 recovery example contains a small arithmetic typo: three consecutive attended classes are needed to reach 75% (`15/20`), not one.
+The complete schema, indexes, signup trigger, and Row Level Security policies are in [supabase/migrations/20260728_initial_schema.sql](supabase/migrations/20260728_initial_schema.sql).
 
-## Project layout
+## The math
+
+Only Present and Absent count toward attendance. Cancelled and Holiday sessions are deliberately excluded.
+
+```text
+percentage = round(P / (P + A) × 100, 1)
+bunkable   = floor(P / target − (P + A))
+comeback   = ceil((target × (P + A) − P) / (1 − target))
+```
+
+The overview is weighted across all active subjects. The implementation and examples are tested in [src/lib/attendanceMath.test.ts](src/lib/attendanceMath.test.ts).
+
+## Architecture
+
+| Layer | Choice |
+| --- | --- |
+| Application | React, TypeScript, Vite |
+| Interface | Custom accessible components, Lucide icons |
+| Authentication and data | Supabase Auth, Postgres, Row Level Security |
+| Installability | Workbox via vite-plugin-pwa |
+| Hosting | Vercel |
+
+The project deliberately stays small:
 
 ```text
 src/
-  App.tsx                    routes and screens
-  styles.css                 responsive visual system
-  lib/
-    attendanceMath.ts        tested, pure attendance calculations
-    store.tsx                session-aware local/remote state and offline cache
-    supabaseClient.ts        browser-safe Supabase client
-  types.ts                   application domain types
+  App.tsx                 screens and routes
+  lib/attendanceMath.ts   tested, pure attendance calculations
+  lib/store.tsx           session-aware local/remote state
+  lib/supabaseClient.ts   browser-safe Supabase client
 supabase/
-  config.toml                local Supabase/Auth configuration
-  migrations/                versioned database schema
-public/icon.svg              PWA application icon
+  migrations/             versioned database schema
 ```
-
-## Routes
-
-| Route | Purpose |
-| --- | --- |
-| `/auth/sign-in` | Magic-link or password sign-in |
-| `/auth/sign-up` | Email/password account creation |
-| `/onboarding` | Profile and recurring timetable setup |
-| `/` | Today’s check-in, weighted overview, at-risk subjects |
-| `/subjects` | Subject management and archive view |
-| `/subjects/:id` | Per-subject safety margin and history |
-| `/calendar` | Monthly backfill and editing |
-| `/settings` | Profile, theme, CSV export, sign-out, local-cache reset |
 
 ## Quality checks
 
 ```bash
-npm test       # attendance-math unit tests
-npm run build  # TypeScript check + production PWA bundle
+npm test
+npm run build
 ```
 
-The production build creates the service worker, manifest, and static assets in `dist/`.
+The production build creates the PWA manifest, service worker, and static assets in `dist/`.
 
-## Deployment
+## Deploy
 
-Vercel is connected to the `main` branch, so pushes trigger deployments automatically. For a manual production deployment:
+Vercel deploys pushes to `main` automatically. For a manual production release:
 
 ```bash
 npx vercel --prod
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Production, Preview, and Development in Vercel before deploying. The app is a static Vite build; no server-side secret is required.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel for Production, Preview, and Development.
 
-## Privacy and offline behavior
+## Privacy
 
-Each Supabase table is restricted to its authenticated owner through RLS. The browser retains a small attendance cache to make the last loaded data available offline. On Supabase sign-out, Presently clears that cache before another account can load, preventing data from one user being shown to another on the same device.
+Every record is protected by Supabase Row Level Security and scoped to its authenticated owner. Presently keeps a small local cache for offline viewing, then clears that cache on sign-out before another account can load.
 
-Offline writes update the interface immediately and rely on the Supabase client/session reconnect path. This is intentionally lightweight: it is not a multi-device conflict-resolution engine.
+---
 
-## License
-
-Private project for Presently. Add a license before publishing it as open source.
+Made for a little more certainty in a busy week.
