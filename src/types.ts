@@ -1,6 +1,5 @@
 export type AttendanceStatus = 'present' | 'absent' | 'cancelled' | 'holiday'
 export type SubjectType = 'lecture' | 'lab' | 'tutorial'
-export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface Profile {
   id: string

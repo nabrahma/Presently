@@ -27,7 +27,7 @@ That is the whole product. Less arithmetic, less second-guessing.
 - Per-subject targets, timetables, history, archive and delete
 - Weighted overall attendance — pooled across classes, never an average of averages
 - Email sign-in by magic link or password
-- CSV export, light and dark themes, installable as an app
+- CSV export, installable as an app
 - Works offline: changes are queued on the device and sent when you reconnect
 
 ## Open source
@@ -97,6 +97,9 @@ The implementation is in [src/lib/attendanceMath.ts](src/lib/attendanceMath.ts) 
 | --- | --- |
 | Application | React 19, TypeScript, Vite |
 | Styling | Tailwind CSS v4, with the palette defined once as CSS custom properties |
+| Type | Geist and Geist Mono, self-hosted |
+| Motion | Motion, for transitions and the sliding dock indicator |
+| Sheets | Vaul, for drag-to-dismiss drawers |
 | Icons | Lucide |
 | Auth and data | Supabase Auth, Postgres, Row Level Security |
 | Offline and install | Workbox via vite-plugin-pwa |
@@ -104,8 +107,8 @@ The implementation is in [src/lib/attendanceMath.ts](src/lib/attendanceMath.ts) 
 
 ```text
 src/
-  App.tsx              routes and access control
-  components/          dialog, forms, meters, shell
+  App.tsx              routes, access control, code splitting
+  components/          shell, drawer, forms, gauges, data rows
   screens/             one file per route
   lib/
     attendanceMath.ts  pure, tested attendance calculations
@@ -115,6 +118,19 @@ src/
     store.tsx          state, sync, and the offline outbox
 supabase/migrations/   versioned database schema
 ```
+
+### How it is meant to feel
+
+Presently is installed and opened for a few seconds a day, so it is built as an
+app rather than a page. The viewport is pinned, exactly one region scrolls, and
+the header and dock are a layout route that mounts once — so navigating between
+tabs moves an indicator instead of repainting the chrome. Sheets are draggable,
+taps have no highlight rectangle, safe areas are respected, and inputs are 16px
+so focusing one never zooms the layout.
+
+The look is a single committed one: black canvas, one green accent, hairline
+outlines and mono numerals. There is no theme switcher, because there is no
+second theme to switch to.
 
 ### How syncing works
 

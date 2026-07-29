@@ -11,7 +11,10 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'supabase-vendor': ['@supabase/supabase-js']
+          'supabase-vendor': ['@supabase/supabase-js'],
+          // Animation is used on every screen, so it gets its own long-lived
+          // chunk rather than being duplicated across the lazy route bundles.
+          'motion-vendor': ['motion/react']
         }
       }
     }

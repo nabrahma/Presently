@@ -15,7 +15,7 @@ interface ConfirmDialogProps {
 
 /**
  * Destructive actions get one deliberate step. The typed-phrase variant is
- * reserved for the irreversible ones, where a mis-tap should not be enough.
+ * kept for the irreversible ones, where a mis-tap should not be enough.
  */
 export function ConfirmDialog({
   open,
@@ -51,15 +51,16 @@ export function ConfirmDialog({
 
   return (
     <Sheet open={open} onClose={onCancel} title={title}>
-      <p className="text-[0.88rem] leading-relaxed text-ink-muted">{description}</p>
+      <p className="text-[0.85rem] leading-relaxed text-ink-muted">{description}</p>
 
       {requirePhrase ? (
-        <label className="mt-5 block">
-          <span className="field-label">
+        <div className="mt-6">
+          <label className="label mb-2.5 block" htmlFor="confirm-phrase">
             Type “{requirePhrase}” to confirm
-          </span>
+          </label>
           <input
-            className="field"
+            id="confirm-phrase"
+            className="field font-mono tracking-[0.15em]"
             value={phrase}
             autoComplete="off"
             autoCapitalize="characters"
@@ -69,10 +70,10 @@ export function ConfirmDialog({
               if (event.key === 'Enter') void confirm()
             }}
           />
-        </label>
+        </div>
       ) : null}
 
-      <div className="mt-6 flex gap-2.5">
+      <div className="mt-7 flex gap-3">
         <button type="button" className="btn-secondary flex-1" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
@@ -82,7 +83,7 @@ export function ConfirmDialog({
           disabled={!ready || busy}
           onClick={() => void confirm()}
         >
-          {busy ? 'Working…' : confirmLabel}
+          {busy ? 'Working' : confirmLabel}
         </button>
       </div>
     </Sheet>

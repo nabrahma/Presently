@@ -1,53 +1,21 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import {
-  Check,
-  Download,
-  LogOut,
-  Monitor,
-  Moon,
-  Smartphone,
-  Sun,
-  Trash2
-} from 'lucide-react'
+import { Check, Download, LogOut, Smartphone, Trash2 } from 'lucide-react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { PageHeader, Shell } from '../components/Shell'
+import { DataRow, Panel, SectionHead } from '../components/Panel'
+import { ScreenHead } from '../components/Shell'
 import { buildCsv, downloadCsv } from '../lib/csv'
 import { cn } from '../lib/cn'
 import { todayKey } from '../lib/date'
 import { useStore } from '../lib/store'
-import { useTheme } from '../lib/theme'
 import { useInstallPrompt } from '../lib/useInstallPrompt'
-import {
-  BRANCHES,
-  MAX_SEMESTER,
-  MAX_TARGET,
-  MIN_SEMESTER,
-  MIN_TARGET,
-  type ThemeMode
-} from '../types'
-
-const THEMES: Array<{ value: ThemeMode; label: string; icon: typeof Sun }> = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Monitor }
-]
+import { BRANCHES, MAX_SEMESTER, MAX_TARGET, MIN_SEMESTER, MIN_TARGET } from '../types'
 
 export function Settings() {
   const navigate = useNavigate()
-  const {
-    profile,
-    subjects,
-    records,
-    email,
-    isDemo,
-    cloud,
-    saveProfile,
-    clearAllData,
-    signOut
-  } = useStore()
-  const { mode, setMode } = useTheme()
+  const { profile, subjects, records, email, isDemo, cloud, saveProfile, clearAllData, signOut } =
+    useStore()
   const { canInstall, installed, install } = useInstallPrompt()
 
   const [branch, setBranch] = useState(profile?.branch ?? BRANCHES[0])
@@ -83,7 +51,7 @@ export function Settings() {
         fullName: profile?.fullName,
         onboarded: true
       })
-      toast.success('Preferences saved')
+      toast.success('Saved')
     } finally {
       setSaving(false)
     }
@@ -99,17 +67,15 @@ export function Settings() {
   }
 
   return (
-    <Shell>
-      <PageHeader eyebrow={email ?? (isDemo ? 'Demo session' : 'This device')} title="Settings" />
+    <>
+      <ScreenHead label={isDemo ? 'Demo session' : (email ?? 'This device')} title="Settings" />
 
-      <section className="card p-5" aria-labelledby="prefs-heading">
-        <h2 id="prefs-heading" className="eyebrow mb-4">
-          Defaults
-        </h2>
+      <Panel className="px-5 py-5">
+        <p className="label mb-4">Defaults</p>
 
         <div className="space-y-4">
           <div>
-            <label className="field-label" htmlFor="settings-branch">
+            <label className="label mb-2.5 block" htmlFor="settings-branch">
               Branch
             </label>
             <select
@@ -118,7 +84,7 @@ export function Settings() {
               value={branch}
               onChange={(event) => setBranch(event.target.value)}
             >
-              {/* A value loaded from an older release may not be in the list. */}
+              {/* A value stored by an older release may not be in the list. */}
               {(BRANCHES.includes(branch) ? BRANCHES : [branch, ...BRANCHES]).map((item) => (
                 <option key={item} value={item}>
                   {item}
@@ -129,7 +95,7 @@ export function Settings() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="field-label" htmlFor="settings-semester">
+              <label className="label mb-2.5 block" htmlFor="settings-semester">
                 Semester
               </label>
               <input
@@ -144,7 +110,7 @@ export function Settings() {
               />
             </div>
             <div>
-              <label className="field-label" htmlFor="settings-target">
+              <label className="label mb-2.5 block" htmlFor="settings-target">
                 Target %
               </label>
               <input
@@ -160,96 +126,72 @@ export function Settings() {
             </div>
           </div>
 
-          <p className="text-[0.75rem] leading-relaxed text-ink-muted">
+          <p className="text-[0.74rem] leading-relaxed text-ink-faint">
             The target applies to your overall percentage and to new subjects. Existing subjects keep
             their own.
           </p>
 
           {!valid ? (
-            <p role="alert" className="text-[0.78rem] text-critical">
+            <p role="alert" className="text-[0.75rem] text-danger">
               Semester must be {MIN_SEMESTER}–{MAX_SEMESTER} and target {MIN_TARGET}–{MAX_TARGET}.
             </p>
           ) : null}
 
           <button
             type="button"
-            className="btn-primary w-full"
+            className={cn('w-full', dirty && valid ? 'btn-primary' : 'btn-secondary')}
             disabled={!valid || !dirty || saving}
             onClick={() => void save()}
           >
-            {saving ? 'Saving…' : dirty ? 'Save preferences' : 'Saved'}
+            {saving ? 'Saving' : dirty ? 'Save' : 'Saved'}
           </button>
         </div>
-      </section>
+      </Panel>
 
-      <section className="card mt-4 p-5" aria-labelledby="appearance-heading">
-        <h2 id="appearance-heading" className="eyebrow mb-4">
-          Appearance
-        </h2>
-        <div role="radiogroup" aria-label="Theme" className="flex rounded-xl border border-line bg-canvas p-1">
-          {THEMES.map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={mode === value}
-              onClick={() => setMode(value)}
-              className={cn(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[0.8rem] font-semibold transition-colors',
-                mode === value ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
-              )}
-            >
-              <Icon size={14} strokeWidth={2.2} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
+      <div className="mt-7">
+        <SectionHead label="Data" />
 
-      <section className="card mt-4 divide-y divide-line" aria-labelledby="data-heading">
-        <h2 id="data-heading" className="eyebrow px-5 pt-5 pb-3">
-          Your data
-        </h2>
-
-        <SettingRow
-          icon={<Download size={17} strokeWidth={1.9} />}
-          title="Export as CSV"
-          detail={`${records.length} ${records.length === 1 ? 'record' : 'records'} across ${subjects.length} ${subjects.length === 1 ? 'subject' : 'subjects'}`}
+        <ActionRow
+          icon={<Download size={16} strokeWidth={1.9} />}
+          title="Export CSV"
+          detail={`${records.length} ${records.length === 1 ? 'record' : 'records'} · ${subjects.length} ${subjects.length === 1 ? 'subject' : 'subjects'}`}
           onClick={exportData}
         />
 
         {canInstall ? (
-          <SettingRow
-            icon={<Smartphone size={17} strokeWidth={1.9} />}
-            title="Install Presently"
-            detail="Add it to your home screen for one-tap check-ins"
+          <ActionRow
+            icon={<Smartphone size={16} strokeWidth={1.9} />}
+            title="Install app"
+            detail="Add to your home screen"
             onClick={() => void install()}
           />
         ) : installed ? (
-          <div className="flex items-center gap-3.5 px-5 py-4 text-ink-muted">
-            <Check size={17} strokeWidth={1.9} />
-            <div>
-              <p className="text-[0.88rem] font-medium text-ink">Installed</p>
-              <p className="mt-0.5 text-[0.74rem]">Running as an installed app.</p>
+          <DataRow>
+            <span className="shrink-0 text-accent">
+              <Check size={16} strokeWidth={1.9} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.85rem]">Installed</p>
+              <p className="label mt-1.5">Running as an app</p>
             </div>
-          </div>
+          </DataRow>
         ) : null}
 
         {cloud && !isDemo ? (
-          <SettingRow
-            icon={<LogOut size={17} strokeWidth={1.9} />}
+          <ActionRow
+            icon={<LogOut size={16} strokeWidth={1.9} />}
             title="Sign out"
-            detail="Also clears the copy cached on this device"
+            detail="Also clears this device's cached copy"
             onClick={() => setConfirmSignOut(true)}
           />
         ) : null}
 
-        <SettingRow
-          icon={<Trash2 size={17} strokeWidth={1.9} />}
-          title={isDemo ? 'Leave the demo' : 'Delete everything'}
+        <ActionRow
+          icon={<Trash2 size={16} strokeWidth={1.9} />}
+          title={isDemo ? 'Leave demo' : 'Delete everything'}
           detail={
             isDemo
-              ? 'Clear the sample data and start fresh'
+              ? 'Clear the sample data'
               : cloud
                 ? 'Removes every subject and record from your account'
                 : 'Removes every subject and record from this device'
@@ -257,10 +199,10 @@ export function Settings() {
           destructive
           onClick={() => setConfirmWipe(true)}
         />
-      </section>
+      </div>
 
-      <p className="mt-8 text-center text-[0.72rem] leading-relaxed text-ink-faint">
-        Presently · Only Present and Absent count toward your percentage.
+      <p className="mt-8 text-center font-mono text-[0.6rem] leading-relaxed tracking-[0.08em] text-ink-faint uppercase">
+        Only present and absent count
       </p>
 
       <ConfirmDialog
@@ -282,7 +224,7 @@ export function Settings() {
         description={
           isDemo
             ? 'The sample subjects and records will be removed.'
-            : `This permanently removes ${subjects.length} ${subjects.length === 1 ? 'subject' : 'subjects'} and ${records.length} attendance ${records.length === 1 ? 'record' : 'records'}${cloud ? ' from your account and every device' : ''}. It cannot be undone — export first if you want a copy.`
+            : `This permanently removes ${subjects.length} ${subjects.length === 1 ? 'subject' : 'subjects'} and ${records.length} attendance ${records.length === 1 ? 'record' : 'records'}${cloud ? ' from your account and every device' : ''}. Export first if you want a copy.`
         }
         confirmLabel={isDemo ? 'Leave demo' : 'Delete everything'}
         requirePhrase={isDemo ? undefined : 'DELETE'}
@@ -290,15 +232,15 @@ export function Settings() {
         onConfirm={async () => {
           await clearAllData()
           setConfirmWipe(false)
-          toast.success(isDemo ? 'Demo cleared' : 'Everything deleted')
+          toast.success(isDemo ? 'Demo cleared' : 'Deleted')
           navigate(isDemo ? '/auth' : '/onboarding', { replace: true })
         }}
       />
-    </Shell>
+    </>
   )
 }
 
-function SettingRow({
+function ActionRow({
   icon,
   title,
   detail,
@@ -312,18 +254,12 @@ function SettingRow({
   destructive?: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3.5 px-5 py-4 text-left transition-colors hover:bg-canvas"
-    >
-      <span className={cn('shrink-0', destructive ? 'text-critical' : 'text-ink-muted')}>{icon}</span>
+    <DataRow onClick={onClick} className="py-4">
+      <span className={cn('shrink-0', destructive ? 'text-danger' : 'text-ink-muted')}>{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className={cn('block text-[0.88rem] font-medium', destructive && 'text-critical')}>
-          {title}
-        </span>
-        <span className="mt-0.5 block text-[0.74rem] text-ink-muted">{detail}</span>
+        <span className={cn('block text-[0.85rem]', destructive && 'text-danger')}>{title}</span>
+        <span className="label mt-1.5 block normal-case">{detail}</span>
       </span>
-    </button>
+    </DataRow>
   )
 }

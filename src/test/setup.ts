@@ -23,6 +23,13 @@ if (typeof window !== 'undefined') {
     window.scrollTo = (() => undefined) as typeof window.scrollTo
   }
 
+  // The drawer uses pointer capture for its drag gesture; jsdom has no
+  // implementation, which surfaces as a thrown error mid-interaction.
+  const element = window.Element.prototype as unknown as Record<string, unknown>
+  element.setPointerCapture ??= () => undefined
+  element.releasePointerCapture ??= () => undefined
+  element.hasPointerCapture ??= () => false
+
   afterEach(() => {
     window.localStorage.clear()
     vi.restoreAllMocks()

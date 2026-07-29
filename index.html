@@ -2,7 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!--
+      user-scalable=no is normally an accessibility mistake. Here the app is a
+      fixed single-screen instrument with no reflowing text to enlarge, and
+      pinch-zoom on a PWA reads as a broken web page rather than a feature.
+      Text still scales with the system font-size setting.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
 
     <title>Presently — Attendance Tracker</title>
     <meta
@@ -12,12 +21,13 @@
 
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Presently" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-
-    <meta name="theme-color" content="#f2f2f0" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)" />
+    <!-- Draws the status bar over the app so the black canvas runs edge to edge. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#060806" />
+    <meta name="color-scheme" content="dark" />
 
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Presently — Attendance Tracker" />
@@ -28,30 +38,20 @@
     <meta property="og:image" content="/icon-512.png" />
     <meta name="twitter:card" content="summary" />
 
-    <script>
-      /*
-        Applied before first paint so a returning user never sees the wrong
-        theme flash. Kept inline and dependency-free on purpose.
-      */
-      ;(function () {
-        try {
-          var stored = localStorage.getItem('presently-theme')
-          var mode = stored === 'light' || stored === 'dark' ? stored : null
-          if (!mode) {
-            mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-          }
-          document.documentElement.dataset.theme = mode
-          document.documentElement.style.colorScheme = mode
-        } catch (error) {
-          document.documentElement.dataset.theme = 'light'
-        }
-      })()
-    </script>
+    <style>
+      /* Painted before the bundle loads so launching never flashes white. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #060806;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <noscript>
-      <div style="padding: 2rem; font-family: system-ui, sans-serif">
+      <div style="padding: 2rem; color: #e7ede4; font-family: system-ui, sans-serif">
         <h1>JavaScript is required</h1>
         <p>Presently needs JavaScript enabled to load your attendance.</p>
       </div>

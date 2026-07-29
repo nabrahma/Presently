@@ -45,7 +45,7 @@ export function SubjectForm({
   const [code, setCode] = useState(initial?.code ?? '')
   const [type, setType] = useState<SubjectType>(initial?.subjectType ?? 'lecture')
   const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0])
-  // Held as a string so clearing the field does not momentarily mean zero.
+  // Kept as a string so clearing the field does not momentarily mean zero.
   const [target, setTarget] = useState(String(initial?.targetPercentage ?? defaultTarget))
   const [schedule, setSchedule] = useState<ScheduleItem[]>(initial?.schedule ?? [])
   const [errors, setErrors] = useState<Errors>({})
@@ -127,14 +127,14 @@ export function SubjectForm({
   const perWeek = weeklyLoad({ schedule } as Subject)
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-5">
+    <form onSubmit={submit} noValidate className="space-y-6">
       <div>
-        <label className="field-label" htmlFor={`${formId}-name`}>
+        <label className="label mb-2.5 block" htmlFor={`${formId}-name`}>
           Subject name
         </label>
         <input
           id={`${formId}-name`}
-          className={cn('field', errors.name && 'border-critical')}
+          className={cn('field', errors.name && 'border-danger')}
           value={name}
           maxLength={MAX_SUBJECT_NAME_LENGTH}
           autoComplete="off"
@@ -147,7 +147,7 @@ export function SubjectForm({
           }}
         />
         {errors.name ? (
-          <p id={`${formId}-name-error`} role="alert" className="mt-1.5 text-[0.75rem] text-critical">
+          <p id={`${formId}-name-error`} role="alert" className="mt-2 text-[0.75rem] text-danger">
             {errors.name}
           </p>
         ) : null}
@@ -155,7 +155,7 @@ export function SubjectForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="field-label" htmlFor={`${formId}-code`}>
+          <label className="label mb-2.5 block" htmlFor={`${formId}-code`}>
             Code
           </label>
           <input
@@ -169,7 +169,7 @@ export function SubjectForm({
           />
         </div>
         <div>
-          <label className="field-label" htmlFor={`${formId}-type`}>
+          <label className="label mb-2.5 block" htmlFor={`${formId}-type`}>
             Type
           </label>
           <select
@@ -188,13 +188,13 @@ export function SubjectForm({
       </div>
 
       <div>
-        <label className="field-label" htmlFor={`${formId}-target`}>
-          Attendance target
+        <label className="label mb-2.5 block" htmlFor={`${formId}-target`}>
+          Target
         </label>
         <div className="relative">
           <input
             id={`${formId}-target`}
-            className={cn('field pr-9', errors.target && 'border-critical')}
+            className={cn('field pr-10', errors.target && 'border-danger')}
             type="number"
             inputMode="numeric"
             min={MIN_TARGET}
@@ -207,19 +207,19 @@ export function SubjectForm({
               if (errors.target) setErrors((previous) => ({ ...previous, target: undefined }))
             }}
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-[0.9rem] text-ink-faint">
+          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-ink-faint">
             %
           </span>
         </div>
         {errors.target ? (
-          <p id={`${formId}-target-error`} role="alert" className="mt-1.5 text-[0.75rem] text-critical">
+          <p id={`${formId}-target-error`} role="alert" className="mt-2 text-[0.75rem] text-danger">
             {errors.target}
           </p>
         ) : null}
       </div>
 
       <fieldset>
-        <legend className="field-label">Colour</legend>
+        <legend className="label mb-3">Colour</legend>
         <div className="flex flex-wrap gap-2.5">
           {SUBJECT_COLORS.map((option) => (
             <button
@@ -229,48 +229,50 @@ export function SubjectForm({
               aria-pressed={color === option}
               onClick={() => setColor(option)}
               className={cn(
-                'grid h-8 w-8 place-items-center rounded-full transition-transform',
-                color === option ? 'scale-110 ring-2 ring-ink ring-offset-2 ring-offset-surface' : ''
+                'grid h-9 w-9 place-items-center rounded-full transition-transform',
+                color === option && 'scale-110 ring-2 ring-ink ring-offset-2 ring-offset-surface'
               )}
               style={{ backgroundColor: option }}
             >
-              {color === option ? <Check size={14} strokeWidth={3} className="text-white" /> : null}
+              {color === option ? <Check size={14} strokeWidth={3} className="text-bg" /> : null}
             </button>
           ))}
         </div>
       </fieldset>
 
       <fieldset>
-        <legend className="field-label">Which days does it meet?</legend>
+        <legend className="label mb-3">Meeting days</legend>
         <div className="flex flex-wrap gap-2">
-          {WEEKDAY_LABELS.map((day, weekday) => {
+          {[1, 2, 3, 4, 5, 6, 0].map((weekday) => {
             const active = schedule.some((item) => item.weekday === weekday)
             return (
               <button
-                key={day}
+                key={weekday}
                 type="button"
                 aria-pressed={active}
+                aria-label={WEEKDAY_LABELS[weekday]}
                 onClick={() => toggleDay(weekday)}
                 className={cn(
-                  'h-11 min-w-11 rounded-xl border px-3 text-[0.78rem] font-semibold transition-colors',
-                  active
-                    ? 'border-ink bg-ink text-canvas'
-                    : 'border-line bg-surface text-ink-muted hover:border-line-strong'
+                  'h-11 w-11 rounded-full border font-mono text-[0.68rem] tracking-[0.04em] uppercase transition-colors',
+                  active ? 'border-accent bg-accent text-bg' : 'border-line text-ink-muted'
                 )}
               >
-                {day}
+                {WEEKDAY_LABELS[weekday].slice(0, 2)}
               </button>
             )
           })}
         </div>
 
         {schedule.length > 0 ? (
-          <div className="mt-4 divide-y divide-line rounded-xl border border-line">
+          <div className="mt-4 rounded-2xl border border-line px-4">
             {schedule.map((item) => (
-              <div key={item.weekday} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                <span className="text-[0.85rem] font-medium">{WEEKDAY_LABELS[item.weekday]}</span>
-                <label className="flex items-center gap-2 text-[0.75rem] text-ink-muted">
-                  Sessions
+              <div
+                key={item.weekday}
+                className="flex items-center justify-between gap-3 border-b border-line py-3 last:border-b-0"
+              >
+                <span className="label">{WEEKDAY_LABELS[item.weekday]}</span>
+                <label className="flex items-center gap-2.5">
+                  <span className="label">Sessions</span>
                   <input
                     type="number"
                     inputMode="numeric"
@@ -279,36 +281,36 @@ export function SubjectForm({
                     value={item.sessionsPerDay}
                     aria-label={`Sessions on ${WEEKDAY_LABELS[item.weekday]}`}
                     onChange={(event) => setSessions(item.weekday, Number(event.target.value))}
-                    className="h-10 w-16 rounded-lg border border-line bg-surface px-2.5 text-center text-[0.85rem] text-ink"
+                    className="h-10 w-14 rounded-xl border border-line bg-bg text-center font-mono text-[16px] text-ink"
                   />
                 </label>
               </div>
             ))}
           </div>
         ) : (
-          /* A subject with no days never appears on the daily check-in, which
-             is confusing enough to be worth saying out loud. */
-          <p className="mt-3 text-[0.78rem] leading-relaxed text-ink-muted">
-            No days selected. You can still add this subject and mark it from the calendar, but it
-            will not show up in your daily check-in.
+          /* A subject with no days never reaches the daily check-in, which is
+             confusing enough to say out loud. */
+          <p className="mt-3 text-[0.75rem] leading-relaxed text-ink-faint">
+            No days selected. The subject can still be marked from the calendar, but it will not
+            appear in your daily check-in.
           </p>
         )}
 
         {perWeek > 0 ? (
-          <p className="mt-3 text-[0.78rem] text-ink-muted">
-            {perWeek} {perWeek === 1 ? 'session' : 'sessions'} a week.
+          <p className="mt-3 font-mono text-[0.62rem] tracking-[0.08em] text-ink-faint uppercase">
+            {perWeek} {perWeek === 1 ? 'session' : 'sessions'} per week
           </p>
         ) : null}
       </fieldset>
 
-      <div className="flex gap-2.5 pt-1">
+      <div className="flex gap-3 pt-1">
         {onCancel ? (
           <button type="button" className="btn-secondary flex-1" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
         ) : null}
         <button type="submit" className="btn-primary flex-1" disabled={busy}>
-          {busy ? 'Saving…' : submitLabel}
+          {busy ? 'Saving' : submitLabel}
         </button>
       </div>
     </form>

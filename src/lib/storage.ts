@@ -4,7 +4,6 @@ const VERSION = 'presently:v3'
 const LEGACY_PREFIX = 'presently-data-v2'
 
 export const GUEST_ACCOUNT = 'guest'
-export const THEME_KEY = 'presently-theme'
 export const MODE_KEY = `${VERSION}:mode`
 
 /**
@@ -164,14 +163,6 @@ export function readMode(): string | null {
 export function writeMode(mode: string | null): void {
   if (mode === null) safeRemove(MODE_KEY)
   else safeSet(MODE_KEY, mode)
-}
-
-export function readTheme(): string | null {
-  return safeGet(THEME_KEY)
-}
-
-export function writeTheme(theme: string): void {
-  safeSet(THEME_KEY, theme)
 }
 
 /**

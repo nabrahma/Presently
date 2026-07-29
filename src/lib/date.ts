@@ -49,3 +49,21 @@ export function shiftKey(key: string, days: number): string {
   date.setDate(date.getDate() + days)
   return dateKey(date)
 }
+
+/*
+  The launch screen needs exactly two date labels. Intl is built into the
+  browser and costs nothing to ship, which keeps the whole date library off
+  the critical path — it now loads only with the calendar.
+*/
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
+const dayMonthFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long' })
+
+/** e.g. "Wednesday" */
+export function formatWeekday(date: Date): string {
+  return weekdayFormat.format(date)
+}
+
+/** e.g. "29 July" */
+export function formatDayMonth(date: Date): string {
+  return dayMonthFormat.format(date)
+}

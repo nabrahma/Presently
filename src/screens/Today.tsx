@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { format } from 'date-fns'
-import { CalendarCheck, Check, ChevronRight } from 'lucide-react'
-import { AttendanceMeter } from '../components/AttendanceMeter'
+import { CalendarCheck, ChevronRight } from 'lucide-react'
 import { Empty } from '../components/Empty'
-import { PageHeader, Shell } from '../components/Shell'
+import { Gauge, Meter } from '../components/Gauge'
+import { DataRow, Panel, Readout, SectionHead } from '../components/Panel'
+import { ScreenHead } from '../components/Shell'
 import { StatusControl } from '../components/StatusControl'
 import { attendanceStats, safetyZone } from '../lib/attendanceMath'
-import { keyToDate } from '../lib/date'
+import { formatDayMonth, formatWeekday, keyToDate } from '../lib/date'
 import { sessionsForDate } from '../lib/schedule'
 import { useStore } from '../lib/store'
 import { useTodayKey } from '../lib/useTodayKey'
@@ -21,19 +21,13 @@ export function Today() {
   const active = useMemo(() => subjects.filter((subject) => !subject.isArchived), [subjects])
 
   const overall = useMemo(() => {
-    const activeIds = new Set(active.map((subject) => subject.id))
-    return attendanceStats(
-      records.filter((record) => activeIds.has(record.subjectId)),
-      target
-    )
+    const ids = new Set(active.map((subject) => subject.id))
+    return attendanceStats(records.filter((record) => ids.has(record.subjectId)), target)
   }, [active, records, target])
 
-  const sessions = useMemo(
-    () => sessionsForDate(active, records, date),
-    [active, records, date]
-  )
+  const sessions = useMemo(() => sessionsForDate(active, records, date), [active, records, date])
 
-  const todaysRecords = useMemo(() => {
+  const marked = useMemo(() => {
     const map = new Map<string, AttendanceRecord>()
     for (const record of records) {
       if (record.recordDate === date) map.set(`${record.subjectId}|${record.sessionIndex}`, record)
@@ -41,9 +35,7 @@ export function Today() {
     return map
   }, [records, date])
 
-  const unmarked = sessions.filter(
-    (slot) => !todaysRecords.has(`${slot.subject.id}|${slot.sessionIndex}`)
-  )
+  const unmarked = sessions.filter((slot) => !marked.has(`${slot.subject.id}|${slot.sessionIndex}`))
 
   const atRisk = useMemo(
     () =>
@@ -60,7 +52,23 @@ export function Today() {
     [active, records]
   )
 
-  const markRemainingPresent = () =>
+  // Total spare classes across everything still on target — the one number
+  // that answers "can I skip today".
+  const spare = useMemo(
+    () =>
+      active.reduce((total, subject) => {
+        const stats = attendanceStats(
+          records.filter((record) => record.subjectId === subject.id),
+          subject.targetPercentage
+        )
+        return total + (stats.bunkable ?? 0)
+      }, 0),
+    [active, records]
+  )
+
+  const zone = safetyZone(overall.percentage, target)
+
+  const markRest = () =>
     void setRecords(
       unmarked.map((slot) => ({
         subjectId: slot.subject.id,
@@ -70,95 +78,107 @@ export function Today() {
       }))
     )
 
-  const zone = safetyZone(overall.percentage, target)
-
   return (
-    <Shell>
-      <PageHeader eyebrow={format(keyToDate(date), 'EEEE')} title={format(keyToDate(date), 'd MMMM')} />
+    <>
+      <ScreenHead label={formatWeekday(keyToDate(date))} title={formatDayMonth(keyToDate(date))} />
 
-      <section className="card px-5 py-6" aria-labelledby="overall-heading">
-        <p id="overall-heading" className="eyebrow">
-          Overall attendance
-        </p>
-
-        <div className="mt-3 mb-6 flex items-baseline gap-2.5">
-          <span className="text-[3.75rem] leading-[0.85] font-semibold tracking-[-0.055em] tabular">
-            {overall.percentage === null ? '—' : overall.percentage}
-          </span>
-          {overall.percentage !== null ? (
-            <span className="text-[1.4rem] font-medium tracking-tight text-ink-faint">%</span>
-          ) : null}
+      {/* Overall standing, as the pill readout from the reference panel. */}
+      <Panel className="flex items-center gap-4 px-5 py-4">
+        <Gauge percentage={overall.percentage} zone={zone} />
+        <div className="min-w-0 flex-1">
+          <p className="label">Overall</p>
+          <p className="readout mt-2 text-[1.75rem]">
+            {overall.percentage === null ? '––' : overall.percentage}
+            <span className="text-[0.5em] text-ink-faint">%</span>
+          </p>
+          <div className="mt-3">
+            <Meter percentage={overall.percentage} target={target} zone={zone} />
+          </div>
+          <p className="mt-2.5 font-mono text-[0.62rem] tracking-[0.08em] text-ink-faint uppercase">
+            {overall.total === 0 ? 'No classes yet' : `${overall.present}/${overall.total} · target ${target}%`}
+          </p>
         </div>
+      </Panel>
 
-        <AttendanceMeter percentage={overall.percentage} target={target} zone={zone} />
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Panel className="px-5 py-4">
+          <Readout
+            label="Can miss"
+            value={String(spare)}
+            suffix={spare === 1 ? 'class' : 'classes'}
+            tone={spare === 0 ? 'muted' : 'accent'}
+          />
+        </Panel>
+        <Panel className="px-5 py-4">
+          <Readout
+            label="Below target"
+            value={String(atRisk.length)}
+            suffix={atRisk.length === 1 ? 'subject' : 'subjects'}
+            tone={atRisk.length > 0 ? 'danger' : 'muted'}
+          />
+        </Panel>
+      </div>
 
-        <p className="mt-4 text-[0.84rem] leading-relaxed text-ink-muted">
-          {overall.total === 0
-            ? 'Nothing recorded yet. Mark your first class to see where you stand.'
-            : `${overall.present} of ${overall.total} classes attended across ${active.length} ${
-                active.length === 1 ? 'subject' : 'subjects'
-              }.`}
-        </p>
-      </section>
-
-      <section className="mt-9" aria-labelledby="today-heading">
-        <div className="mb-3.5 flex items-center justify-between gap-3">
-          <h2 id="today-heading" className="text-[1.05rem] font-semibold tracking-tight">
-            Today
-          </h2>
-          {unmarked.length > 0 ? (
-            <button type="button" className="btn-ghost" onClick={markRemainingPresent}>
-              <Check size={14} strokeWidth={2.5} />
-              Mark {unmarked.length === sessions.length ? 'all' : 'rest'} present
-            </button>
-          ) : sessions.length > 0 ? (
-            <span className="text-[0.75rem] font-medium text-ink-faint">All marked</span>
-          ) : null}
-        </div>
+      <div className="mt-7">
+        <SectionHead
+          label={`Today · ${sessions.length} ${sessions.length === 1 ? 'class' : 'classes'}`}
+          action={
+            unmarked.length > 0 ? (
+              <button
+                type="button"
+                onClick={markRest}
+                className="font-mono text-[0.65rem] tracking-[0.1em] text-accent uppercase active:opacity-60"
+              >
+                +All present
+              </button>
+            ) : sessions.length > 0 ? (
+              <span className="label text-accent">Complete</span>
+            ) : null
+          }
+        />
 
         {sessions.length === 0 ? (
-          <Empty
-            icon={<CalendarCheck size={20} strokeWidth={1.8} />}
-            title={active.length === 0 ? 'No subjects yet' : 'Nothing scheduled today'}
-            text={
-              active.length === 0
-                ? 'Add your subjects and their weekly timetable to start tracking.'
-                : 'Enjoy the gap. Anything unexpected can be added from the calendar.'
-            }
-            action={
-              active.length === 0 ? (
-                <Link to="/subjects" className="btn-primary">
-                  Add a subject
-                </Link>
-              ) : null
-            }
-          />
+          <div className="mt-4">
+            <Empty
+              icon={<CalendarCheck size={18} strokeWidth={1.8} />}
+              title={active.length === 0 ? 'No subjects yet' : 'Nothing scheduled'}
+              text={
+                active.length === 0
+                  ? 'Add your subjects and the days they meet to start tracking.'
+                  : 'A clear day. Anything unexpected can be added from the calendar.'
+              }
+              action={
+                active.length === 0 ? (
+                  <Link to="/subjects" className="btn-primary">
+                    Add a subject
+                  </Link>
+                ) : null
+              }
+            />
+          </div>
         ) : (
-          <ul className="card divide-y divide-line overflow-hidden">
+          <div>
             {sessions.map((slot) => {
-              const record = todaysRecords.get(`${slot.subject.id}|${slot.sessionIndex}`)
+              const record = marked.get(`${slot.subject.id}|${slot.sessionIndex}`)
               return (
-                <li
-                  key={`${slot.subject.id}-${slot.sessionIndex}`}
-                  className="flex items-center gap-3 px-4 py-3.5"
-                >
+                <DataRow key={`${slot.subject.id}-${slot.sessionIndex}`}>
                   <span
                     aria-hidden
-                    className="h-8 w-1 shrink-0 rounded-full"
+                    className="h-7 w-[2px] shrink-0 rounded-full"
                     style={{ backgroundColor: slot.subject.color }}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[0.9rem] leading-snug font-medium">
-                      {slot.subject.name}
+                    <p className="truncate font-mono text-[0.82rem] tracking-[0.02em] text-ink uppercase">
+                      {slot.subject.code || slot.subject.name}
                     </p>
-                    <p className="mt-1 truncate text-[0.72rem] text-ink-muted">
-                      {slot.subject.code ? `${slot.subject.code} · ` : ''}
+                    <p className="mt-1 truncate font-mono text-[0.6rem] tracking-[0.08em] text-ink-faint uppercase">
                       {SUBJECT_TYPE_LABELS[slot.subject.subjectType]}
-                      {slot.sessionIndex > 1 ? ` · Session ${slot.sessionIndex}` : ''}
+                      {slot.sessionIndex > 1 ? ` · S${slot.sessionIndex}` : ''}
                     </p>
                   </div>
                   <StatusControl
                     compact
+                    layoutId={`${slot.subject.id}-${slot.sessionIndex}`}
                     value={record?.status}
                     label={`${slot.subject.name} attendance`}
                     onChange={(status) =>
@@ -172,46 +192,41 @@ export function Today() {
                       ])
                     }
                   />
-                </li>
+                </DataRow>
               )
             })}
-          </ul>
+          </div>
         )}
-      </section>
+      </div>
 
       {atRisk.length > 0 ? (
-        <section className="mt-9" aria-labelledby="risk-heading">
-          <h2 id="risk-heading" className="mb-3.5 text-[1.05rem] font-semibold tracking-tight">
-            Below target
-          </h2>
-          <ul className="card divide-y divide-line overflow-hidden">
-            {atRisk.map(({ subject, stats }) => (
-              <li key={subject.id}>
-                <Link
-                  to={`/subjects/${subject.id}`}
-                  className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-canvas"
-                >
-                  <span
-                    aria-hidden
-                    className="h-8 w-1 shrink-0 rounded-full"
-                    style={{ backgroundColor: subject.color }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[0.9rem] leading-snug font-medium">{subject.name}</p>
-                    <p className="mt-1 text-[0.72rem] text-critical">
-                      {stats.percentage}% ·{' '}
-                      {stats.comeback === null
-                        ? `A ${subject.targetPercentage}% target cannot be recovered`
-                        : `attend the next ${stats.comeback} to reach ${subject.targetPercentage}%`}
-                    </p>
-                  </div>
-                  <ChevronRight size={16} className="shrink-0 text-ink-faint" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <div className="mt-7">
+          <SectionHead label="Needs attention" />
+          {atRisk.map(({ subject, stats }) => (
+            <Link key={subject.id} to={`/subjects/${subject.id}`} className="block">
+              <DataRow>
+                <span
+                  aria-hidden
+                  className="h-7 w-[2px] shrink-0 rounded-full"
+                  style={{ backgroundColor: subject.color }}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-[0.82rem] text-ink uppercase">
+                    {subject.code || subject.name}
+                  </p>
+                  <p className="mt-1 font-mono text-[0.6rem] tracking-[0.08em] text-danger uppercase">
+                    {stats.comeback === null
+                      ? `${subject.targetPercentage}% unreachable`
+                      : `Attend next ${stats.comeback}`}
+                  </p>
+                </div>
+                <span className="readout text-[1.05rem] text-danger">{stats.percentage}%</span>
+                <ChevronRight size={15} className="shrink-0 text-ink-faint" />
+              </DataRow>
+            </Link>
+          ))}
+        </div>
       ) : null}
-    </Shell>
+    </>
   )
 }

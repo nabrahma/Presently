@@ -1,44 +1,45 @@
+import { motion } from 'motion/react'
 import { cn } from '../lib/cn'
 import { ATTENDANCE_STATUSES, STATUS_LABELS, STATUS_SHORT, type AttendanceStatus } from '../types'
 
-const ACTIVE: Record<AttendanceStatus, string> = {
-  present: 'bg-positive text-white',
-  absent: 'bg-critical text-white',
-  cancelled: 'bg-ink-muted text-white',
-  holiday: 'bg-ink-muted text-white'
+const FILL: Record<AttendanceStatus, string> = {
+  present: 'bg-accent',
+  absent: 'bg-danger',
+  cancelled: 'bg-ink-muted',
+  holiday: 'bg-ink-muted'
 }
 
 interface StatusControlProps {
   value?: AttendanceStatus
   onChange: (status: AttendanceStatus) => void
-  /** Letters instead of words, for dense list rows. */
+  /** Initials instead of words, for dense list rows. */
   compact?: boolean
-  disabled?: boolean
   label: string
+  /** Distinguishes the sliding indicator between simultaneously mounted controls. */
+  layoutId?: string
 }
 
 /**
- * Four mutually exclusive states, one tap each.
+ * Four exclusive states, one tap each.
  *
- * Colour alone never carries the meaning: the selected option is also the only
- * filled tile and every button keeps a full-word accessible name, so the
- * control still reads correctly in greyscale and to a screen reader.
+ * The selected option is the only filled tile and every button keeps its
+ * full-word accessible name, so the control still works in greyscale and
+ * reads correctly to a screen reader.
  */
 export function StatusControl({
   value,
   onChange,
   compact = false,
-  disabled = false,
-  label
+  label,
+  layoutId
 }: StatusControlProps) {
   return (
     <div
       role="group"
       aria-label={label}
       className={cn(
-        'overflow-hidden rounded-xl border border-line bg-canvas',
-        compact ? 'inline-flex shrink-0' : 'flex w-full',
-        disabled && 'opacity-50'
+        'relative flex rounded-full border border-line p-[3px]',
+        compact ? 'shrink-0' : 'w-full'
       )}
     >
       {ATTENDANCE_STATUSES.map((status) => {
@@ -47,19 +48,27 @@ export function StatusControl({
           <button
             key={status}
             type="button"
-            disabled={disabled}
             aria-pressed={selected}
             aria-label={STATUS_LABELS[status]}
             title={STATUS_LABELS[status]}
             onClick={() => onChange(status)}
             className={cn(
-              'h-11 border-r border-line text-[0.72rem] font-semibold transition-colors last:border-r-0',
-              compact ? 'w-10' : 'flex-1 px-3',
-              selected ? ACTIVE[status] : 'text-ink-muted hover:bg-surface hover:text-ink',
-              disabled && 'cursor-not-allowed'
+              'relative rounded-full font-mono text-[0.68rem] font-medium tracking-[0.06em]',
+              'transition-colors duration-150',
+              compact ? 'h-8 w-9' : 'h-10 flex-1 px-2 uppercase',
+              selected ? 'text-bg' : 'text-ink-muted'
             )}
           >
-            {compact ? STATUS_SHORT[status] : STATUS_LABELS[status]}
+            {selected ? (
+              <motion.span
+                layoutId={layoutId ? `${layoutId}-status` : undefined}
+                className={cn('absolute inset-0 rounded-full', FILL[status])}
+                transition={{ type: 'spring', stiffness: 460, damping: 36 }}
+              />
+            ) : null}
+            <span className="relative z-10">
+              {compact ? STATUS_SHORT[status] : STATUS_LABELS[status]}
+            </span>
           </button>
         )
       })}

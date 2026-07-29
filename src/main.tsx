@@ -20,16 +20,17 @@ createRoot(container).render(
           <UpdatePrompt />
           <Toaster
             position="top-center"
-            offset={12}
+            offset={16}
             toastOptions={{
-              // Toasts inherit the app's tokens rather than shipping a second,
-              // competing palette that would ignore the theme.
+              // Toasts read from the app's tokens rather than shipping a
+              // second palette that would ignore the theme.
               style: {
-                background: 'var(--color-surface)',
+                background: 'var(--color-elevated)',
                 color: 'var(--color-ink)',
                 border: '1px solid var(--color-line)',
-                borderRadius: '0.85rem',
-                fontFamily: 'var(--font-sans)'
+                borderRadius: '9999px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.78rem'
               }
             }}
           />

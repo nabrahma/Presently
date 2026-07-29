@@ -12,7 +12,8 @@ import {
 } from 'date-fns'
 import { CalendarOff, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Empty } from '../components/Empty'
-import { PageHeader, Shell } from '../components/Shell'
+import { Panel } from '../components/Panel'
+import { ScreenHead } from '../components/Shell'
 import { Sheet } from '../components/Sheet'
 import { StatusControl } from '../components/StatusControl'
 import { cn } from '../lib/cn'
@@ -22,7 +23,7 @@ import { useStore } from '../lib/store'
 import { useTodayKey } from '../lib/useTodayKey'
 import { SUBJECT_TYPE_LABELS, WEEKDAY_LABELS, type AttendanceStatus } from '../types'
 
-type DayMark = 'none' | 'complete' | 'partial' | 'absent' | 'off'
+type DayMark = 'none' | 'present' | 'absent' | 'off'
 
 export function Calendar() {
   const { subjects, records, setRecords } = useStore()
@@ -36,13 +37,13 @@ export function Calendar() {
   const grid = useMemo(
     () =>
       eachDayOfInterval({
-        start: startOfWeek(startOfMonth(month), { weekStartsOn: 0 }),
-        end: endOfWeek(endOfMonth(month), { weekStartsOn: 0 })
+        start: startOfWeek(startOfMonth(month), { weekStartsOn: 1 }),
+        end: endOfWeek(endOfMonth(month), { weekStartsOn: 1 })
       }),
     [month]
   )
 
-  /** One pass over records; a per-day filter would rescan the whole set 42 times. */
+  /** One pass over records; filtering per day would rescan the set 42 times. */
   const marks = useMemo(() => {
     const byDate = new Map<string, AttendanceStatus[]>()
     for (const record of records) {
@@ -53,8 +54,8 @@ export function Calendar() {
 
     const result = new Map<string, DayMark>()
     for (const [key, statuses] of byDate) {
-      if (statuses.some((status) => status === 'absent')) result.set(key, 'absent')
-      else if (statuses.some((status) => status === 'present')) result.set(key, 'complete')
+      if (statuses.includes('absent')) result.set(key, 'absent')
+      else if (statuses.includes('present')) result.set(key, 'present')
       else result.set(key, 'off')
     }
     return result
@@ -88,20 +89,19 @@ export function Calendar() {
     )
   }
 
-  const monthLabel = format(month, 'MMMM yyyy')
   const atCurrentMonth = isSameMonth(month, keyToDate(today))
 
   return (
-    <Shell>
-      <PageHeader
-        eyebrow="Fill in a missed day"
+    <>
+      <ScreenHead
+        label="Backfill"
         title="Calendar"
         action={
           atCurrentMonth ? null : (
             <button
               type="button"
-              className="btn-ghost"
               onClick={() => setMonth(startOfMonth(keyToDate(today)))}
+              className="font-mono text-[0.65rem] tracking-[0.1em] text-accent uppercase active:opacity-60"
             >
               Today
             </button>
@@ -109,38 +109,41 @@ export function Calendar() {
         }
       />
 
-      <section className="card px-3 py-4">
-        <div className="mb-4 flex items-center justify-between px-1">
+      <Panel className="px-3 py-4">
+        <div className="mb-4 flex items-center justify-between px-2">
           <button
             type="button"
             aria-label="Previous month"
             onClick={() => setMonth((value) => subMonths(value, 1))}
-            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
+            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted active:opacity-60"
           >
-            <ChevronLeft size={17} />
+            <ChevronLeft size={16} />
           </button>
-          <h2 aria-live="polite" className="text-[0.95rem] font-semibold tracking-tight">
-            {monthLabel}
+          <h2 aria-live="polite" className="readout text-[0.9rem] tracking-[0.04em] uppercase">
+            {format(month, 'MMM yyyy')}
           </h2>
           <button
             type="button"
             aria-label="Next month"
             onClick={() => setMonth((value) => addMonths(value, 1))}
-            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition-colors hover:bg-canvas hover:text-ink"
+            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted active:opacity-60"
           >
-            <ChevronRight size={17} />
+            <ChevronRight size={16} />
           </button>
         </div>
 
         <div className="grid grid-cols-7" role="presentation">
-          {WEEKDAY_LABELS.map((day) => (
-            <span key={day} className="pb-2 text-center text-[0.65rem] font-semibold text-ink-faint">
-              {day.slice(0, 1)}
+          {[1, 2, 3, 4, 5, 6, 0].map((weekday) => (
+            <span
+              key={weekday}
+              className="pb-2 text-center font-mono text-[0.58rem] tracking-[0.08em] text-ink-faint uppercase"
+            >
+              {WEEKDAY_LABELS[weekday].slice(0, 1)}
             </span>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-0.5">
+        <div className="grid grid-cols-7">
           {grid.map((day) => {
             const key = dateKey(day)
             const outside = !isSameMonth(day, month)
@@ -159,29 +162,27 @@ export function Calendar() {
                 }`}
                 aria-current={isToday ? 'date' : undefined}
                 className={cn(
-                  'relative grid aspect-square place-items-center rounded-xl text-[0.8rem] transition-colors',
-                  future
-                    ? 'cursor-not-allowed text-ink-faint/40'
-                    : 'hover:bg-canvas active:scale-95',
-                  outside && !future && 'text-ink-faint',
-                  isToday && 'font-semibold'
+                  'relative grid aspect-square place-items-center font-mono text-[0.76rem] tabular-nums',
+                  future ? 'text-ink-faint/30' : 'active:opacity-60',
+                  outside && !future && 'text-ink-faint'
                 )}
               >
                 <span
                   className={cn(
-                    'grid h-7 w-7 place-items-center rounded-full',
-                    isToday && 'bg-ink text-canvas'
+                    'grid h-8 w-8 place-items-center rounded-full',
+                    isToday && 'bg-accent text-bg',
+                    !isToday && !outside && !future && 'text-ink'
                   )}
                 >
                   {format(day, 'd')}
                 </span>
-                {mark !== 'none' ? (
+                {mark !== 'none' && !isToday ? (
                   <span
                     aria-hidden
                     className={cn(
                       'absolute bottom-1 h-1 w-1 rounded-full',
-                      mark === 'absent' && 'bg-critical',
-                      mark === 'complete' && 'bg-positive',
+                      mark === 'absent' && 'bg-danger',
+                      mark === 'present' && 'bg-accent',
                       mark === 'off' && 'bg-ink-faint'
                     )}
                   />
@@ -190,19 +191,19 @@ export function Calendar() {
             )
           })}
         </div>
-      </section>
+      </Panel>
 
-      <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[0.7rem] text-ink-muted">
+      <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2">
         {(
           [
-            ['bg-positive', 'Attended'],
-            ['bg-critical', 'Missed'],
-            ['bg-ink-faint', 'Cancelled or holiday']
+            ['bg-accent', 'Attended'],
+            ['bg-danger', 'Missed'],
+            ['bg-ink-faint', 'Off']
           ] as const
-        ).map(([color, label]) => (
-          <li key={label} className="flex items-center gap-1.5">
-            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${color}`} />
-            {label}
+        ).map(([color, text]) => (
+          <li key={text} className="label flex items-center gap-1.5">
+            <span aria-hidden className={cn('h-1 w-1 rounded-full', color)} />
+            {text}
           </li>
         ))}
       </ul>
@@ -215,48 +216,47 @@ export function Calendar() {
       >
         {selectedSessions.length === 0 ? (
           <Empty
-            icon={<CalendarOff size={20} strokeWidth={1.8} />}
+            icon={<CalendarOff size={18} strokeWidth={1.8} />}
             title="Nothing scheduled"
             text="No subject meets on this day, so there is nothing to record."
           />
         ) : (
           <>
-            <div className="mb-5 flex gap-2.5">
+            <div className="mb-6 flex gap-3">
               <button type="button" className="btn-secondary flex-1" onClick={() => markWholeDay('present')}>
                 All present
               </button>
               <button type="button" className="btn-secondary flex-1" onClick={() => markWholeDay('holiday')}>
-                Whole day off
+                Day off
               </button>
             </div>
 
-            <ul className="space-y-4">
+            <div className="space-y-5">
               {selectedSessions.map((slot) => (
-                <li key={`${slot.subject.id}-${slot.sessionIndex}`}>
-                  <div className="mb-2 flex items-center gap-2">
+                <div key={`${slot.subject.id}-${slot.sessionIndex}`}>
+                  <div className="mb-2.5 flex items-center gap-2">
                     <span
                       aria-hidden
-                      className="h-2 w-2 shrink-0 rounded-full"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
                       style={{ backgroundColor: slot.subject.color }}
                     />
-                    <p className="min-w-0 flex-1 truncate text-[0.86rem] font-medium">
-                      {slot.subject.name}
-                    </p>
-                    <span className="shrink-0 text-[0.7rem] text-ink-muted">
+                    <p className="min-w-0 flex-1 truncate text-[0.85rem]">{slot.subject.name}</p>
+                    <span className="label shrink-0">
                       {slot.sessionIndex > 1
-                        ? `Session ${slot.sessionIndex}`
+                        ? `S${slot.sessionIndex}`
                         : SUBJECT_TYPE_LABELS[slot.subject.subjectType]}
                     </span>
                   </div>
 
                   {slot.unscheduled ? (
-                    <p className="mb-2 text-[0.7rem] text-ink-faint">
-                      Recorded before the timetable changed — still editable.
+                    <p className="mb-2 font-mono text-[0.6rem] tracking-[0.06em] text-ink-faint uppercase">
+                      Recorded before the timetable changed
                     </p>
                   ) : null}
 
                   <StatusControl
                     value={selectedRecords.get(`${slot.subject.id}|${slot.sessionIndex}`)}
+                    layoutId={`cal-${slot.subject.id}-${slot.sessionIndex}`}
                     label={`${slot.subject.name} attendance`}
                     onChange={(status) =>
                       void setRecords([
@@ -269,12 +269,12 @@ export function Calendar() {
                       ])
                     }
                   />
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </>
         )}
       </Sheet>
-    </Shell>
+    </>
   )
 }
