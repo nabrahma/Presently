@@ -1,5 +1,6 @@
 export type AttendanceStatus = 'present' | 'absent' | 'cancelled' | 'holiday'
 export type SubjectType = 'lecture' | 'lab' | 'tutorial'
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 export interface Profile {
   id: string
@@ -7,6 +8,11 @@ export interface Profile {
   semester: number
   defaultTargetPercentage: number
   fullName?: string
+  /**
+   * The signup trigger creates a profile row with empty details, so the row
+   * existing is not proof that setup finished. This flag is that proof.
+   */
+  onboarded: boolean
 }
 
 export interface ScheduleItem {
@@ -42,6 +48,8 @@ export interface AppData {
   records: AttendanceRecord[]
 }
 
+export const ATTENDANCE_STATUSES: AttendanceStatus[] = ['present', 'absent', 'cancelled', 'holiday']
+
 export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   present: 'Present',
   absent: 'Absent',
@@ -49,4 +57,56 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   holiday: 'Holiday'
 }
 
-export const SUBJECT_COLORS = ['#22C55E', '#14B8A6', '#0EA5E9', '#3B82F6', '#8B5CF6', '#D946EF', '#F43F5E', '#F97316', '#F59E0B', '#84CC16', '#10B981', '#06B6D4', '#6366F1', '#EC4899', '#EF4444', '#A3A3A3']
+/** Short forms for the compact daily control, kept unambiguous. */
+export const STATUS_SHORT: Record<AttendanceStatus, string> = {
+  present: 'P',
+  absent: 'A',
+  cancelled: 'C',
+  holiday: 'H'
+}
+
+export const SUBJECT_TYPE_LABELS: Record<SubjectType, string> = {
+  lecture: 'Lecture',
+  lab: 'Lab',
+  tutorial: 'Tutorial'
+}
+
+export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * Subject colours are used as small identifying marks rather than fills, so the
+ * set favours hues that stay distinguishable against both themes.
+ */
+export const SUBJECT_COLORS = [
+  '#e2503a',
+  '#e08a1e',
+  '#c9a227',
+  '#5c9e31',
+  '#1f8a4c',
+  '#0f9b8e',
+  '#2b7fd4',
+  '#4f5bd5',
+  '#7c4dcc',
+  '#b3439b',
+  '#d43f6f',
+  '#7a6a58'
+]
+
+export const BRANCHES = [
+  'CSE',
+  'ECE',
+  'EEE',
+  'Mechanical',
+  'Civil',
+  'Mathematics & Scientific Computing',
+  'IPG-IT',
+  'Other'
+]
+
+export const MIN_TARGET = 1
+export const MAX_TARGET = 100
+export const MIN_SEMESTER = 1
+export const MAX_SEMESTER = 12
+export const MAX_SESSIONS_PER_DAY = 8
+export const MAX_SUBJECT_NAME_LENGTH = 80
+export const MAX_SUBJECT_CODE_LENGTH = 16

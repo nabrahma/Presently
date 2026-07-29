@@ -1,135 +1,84 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, getDay, isSameDay, isSameMonth, startOfMonth, startOfWeek, subMonths } from 'date-fns'
-import { Archive, CalendarDays, Check, ChevronLeft, ChevronRight, CircleHelp, Download, GraduationCap, Home, LogOut, Plus, Settings as SettingsIcon, Trash2, WifiOff, X } from 'lucide-react'
-import { attendanceStats, safetyZone } from './lib/attendanceMath'
+import type { ReactNode } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { Auth, AuthLoading } from './screens/Auth'
+import { Calendar } from './screens/Calendar'
+import { Onboarding } from './screens/Onboarding'
+import { Settings } from './screens/Settings'
+import { SubjectDetail } from './screens/SubjectDetail'
+import { Subjects } from './screens/Subjects'
+import { Today } from './screens/Today'
 import { useStore } from './lib/store'
-import { supabase } from './lib/supabaseClient'
-import type { AttendanceRecord, AttendanceStatus, ScheduleItem, Subject, SubjectType } from './types'
-import { STATUS_LABELS, SUBJECT_COLORS } from './types'
 
-const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const todayString = () => new Date().toISOString().slice(0, 10)
-const toDate = (value: string) => new Date(`${value}T12:00:00`)
-const cls = (...values: Array<string | false | undefined>) => values.filter(Boolean).join(' ')
+/**
+ * Route protection has three distinct answers, and collapsing any two of them
+ * is what caused the old app to send returning users back through setup:
+ *
+ *   still loading  → wait, decide nothing
+ *   no session     → sign in
+ *   setup unfinished → onboarding
+ */
+function Protected({ children }: { children: ReactNode }) {
+  const { hydrated, userId, profile, cloud, isDemo } = useStore()
 
-function scheduledSessions(subjects: Subject[], date: Date) {
-  return subjects.flatMap((subject) => {
-    const schedule = subject.schedule.find((item) => item.weekday === getDay(date))
-    return schedule ? Array.from({ length: schedule.sessionsPerDay }, (_, index) => ({ subject, sessionIndex: index + 1 })) : []
-  })
+  if (!hydrated) return <AuthLoading />
+  if (cloud && !userId && !isDemo) return <Navigate to="/auth" replace />
+  if (!profile?.onboarded) return <Navigate to="/onboarding" replace />
+
+  return <>{children}</>
 }
-
-function Ring({ percentage, zone = 'neutral', label }: { percentage: number | null, zone?: string, label?: string }) {
-  const value = percentage ?? 0
-  return <div className={cls('ring', `ring-${zone}`)} style={{ '--value': `${Math.min(100, value) * 3.6}deg` } as React.CSSProperties} aria-label={label ?? (percentage === null ? 'No attendance data' : `${percentage}% attendance`)}>
-    <div className="ring-inner"><strong>{percentage === null ? '—' : `${value}%`}</strong><span>{percentage === null ? 'No classes' : 'attendance'}</span></div>
-  </div>
-}
-
-function StatusControl({ value, onChange, compact = false }: { value?: AttendanceStatus, onChange: (status: AttendanceStatus) => void, compact?: boolean }) {
-  const statuses: AttendanceStatus[] = ['present', 'absent', 'cancelled', 'holiday']
-  return <div className={cls('status-control', compact && 'compact')} role="group" aria-label="Attendance status">
-    {statuses.map((status) => <button key={status} type="button" onClick={() => onChange(status)} className={cls(`status-${status}`, value === status && 'active')} aria-pressed={value === status}>{compact ? status[0].toUpperCase() : STATUS_LABELS[status]}</button>)}
-  </div>
-}
-
-function Shell({ children }: { children: ReactNode }) {
-  const [offline, setOffline] = useState(!navigator.onLine)
-  const [install, setInstall] = useState(false)
-  useEffect(() => {
-    const online = () => setOffline(false); const offline = () => setOffline(true); const prompt = () => setInstall(true)
-    window.addEventListener('online', online); window.addEventListener('offline', offline); window.addEventListener('beforeinstallprompt', prompt)
-    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline); window.removeEventListener('beforeinstallprompt', prompt) }
-  }, [])
-  const nav = [{ to: '/', label: 'Today', icon: Home }, { to: '/subjects', label: 'Subjects', icon: GraduationCap }, { to: '/calendar', label: 'Calendar', icon: CalendarDays }, { to: '/settings', label: 'Settings', icon: SettingsIcon }]
-  return <main className="app-shell">
-    {offline && <div className="offline"><WifiOff size={16} /> You’re offline — changes will sync automatically.</div>}
-    {install && <div className="install-banner"><span>Install Presently for faster daily check-ins.</span><button onClick={() => setInstall(false)} aria-label="Dismiss install prompt"><X size={18} /></button></div>}
-    <header className="topbar"><NavLink to="/" className="brand"><span className="brand-mark">P</span><span>Presently</span></NavLink><span className="topbar-note">Stay on track.</span></header>
-    <section className="page-content">{children}</section>
-    <nav className="bottom-nav" aria-label="Main navigation">{nav.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
-  </main>
-}
-
-function Auth() {
-  const navigate = useNavigate(); const location = useLocation(); const { loadDemo, userId, profile, subjects, ready } = useStore(); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [notice, setNotice] = useState(''); const signUp = location.pathname.endsWith('sign-up')
-  if (userId && !ready) return <main className="auth"><div className="auth-card"><p className="eyebrow">Presently</p><h1>Loading your account…</h1></div></main>
-  if (userId) return <Navigate to={profile && subjects.length ? '/' : '/onboarding'} replace />
-  const submit = async (event: FormEvent) => { event.preventDefault(); if (!supabase) { navigate('/onboarding'); return }; const result = password ? signUp ? await supabase.auth.signUp({ email, password }) : await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } }); setNotice(result.error ? result.error.message : password ? 'Check your email to confirm your account, then return here.' : 'Magic link sent — open it in this browser to continue.') }
-  return <main className="auth"><div className="auth-card"><div className="brand-mark large">P</div><p className="eyebrow">Personal attendance</p><h1>Know where you stand.</h1><p>Presently keeps every class, percentage, and safe skip in one quiet place.</p><form onSubmit={submit}><label>Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label><label>Password <small>(optional)</small><input type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Use for password sign-in" /></label><button className="primary full" type="submit">{signUp ? 'Create account' : password ? 'Sign in with password' : 'Send magic link'}</button></form>{notice && <p className="auth-notice">{notice}</p>}<div className="auth-divider"><span>or</span></div><button className="secondary full" onClick={() => { loadDemo(); navigate('/') }}>Explore a demo</button><small>{supabase ? 'Your attendance remains private to your account.' : 'Configure Supabase keys to activate sign-in and cloud sync.'}</small></div></main>
-}
-
-function Dashboard() {
-  const { subjects, records, upsertRecord } = useStore(); const active = subjects.filter((subject) => !subject.isArchived); const today = new Date(); const date = todayString()
-  const allStats = attendanceStats(records.filter((record) => active.some((subject) => subject.id === record.subjectId)), 75)
-  const sessions = scheduledSessions(active, today); const atRisk = active.map((subject) => ({ subject, stats: attendanceStats(records.filter((record) => record.subjectId === subject.id), subject.targetPercentage) })).filter(({ subject, stats }) => stats.percentage !== null && stats.percentage < subject.targetPercentage).sort((a, b) => (a.stats.percentage ?? 0) - (b.stats.percentage ?? 0))
-  const markAll = () => sessions.forEach(({ subject, sessionIndex }) => { if (!records.find((record) => record.subjectId === subject.id && record.recordDate === date && record.sessionIndex === sessionIndex)) upsertRecord(subject.id, date, sessionIndex, 'present') })
-  return <Shell><div className="page-heading"><div><p className="eyebrow">{format(today, 'EEEE, d MMMM')}</p><h1>Today</h1></div><span className="date-pill">{format(today, 'd MMM')}</span></div>
-    <section className="overview-card"><Ring percentage={allStats.percentage} zone={safetyZone(allStats.percentage, 75)} /><div><p className="eyebrow">Overall attendance</p><h2>{allStats.total ? `${allStats.present} of ${allStats.total}` : 'No classes yet'}</h2><p>{allStats.total ? 'classes attended this semester' : 'Mark your first class to begin.'}</p></div></section>
-    <section className="section"><div className="section-title"><div><p className="eyebrow">Daily check-in</p><h2>Today’s classes</h2></div>{sessions.length > 0 && <button className="text-button" onClick={markAll}><Check size={16} /> Mark all present</button>}</div>
-      {sessions.length === 0 ? <Empty icon={<CalendarDays />} title="No classes scheduled today" text="Enjoy the breathing room — or add a class from Subjects." /> : <div className="class-list">{sessions.map(({ subject, sessionIndex }) => { const record = records.find((item) => item.subjectId === subject.id && item.recordDate === date && item.sessionIndex === sessionIndex); return <div className="class-row" key={`${subject.id}-${sessionIndex}`}><span className="subject-swatch" style={{ backgroundColor: subject.color }} /><div className="class-name"><strong>{subject.name}</strong><span>{subject.code ?? subject.subjectType}{sessionIndex > 1 ? ` · Session ${sessionIndex}` : ''}</span></div><StatusControl compact value={record?.status} onChange={(status) => upsertRecord(subject.id, date, sessionIndex, status)} /></div> })}</div>}
-    </section>
-    {atRisk.length > 0 && <section className="section risk-section"><div className="section-title"><div><p className="eyebrow">Needs attention</p><h2>At-risk subjects</h2></div></div>{atRisk.map(({ subject, stats }) => <NavLink className="risk-row" key={subject.id} to={`/subjects/${subject.id}`}><span className="subject-swatch" style={{ backgroundColor: subject.color }} /><div><strong>{subject.code || subject.name}</strong><p>{stats.percentage}% · Attend next <b>{stats.comeback}</b> classes</p></div><span className="status-badge danger">Below target</span></NavLink>)}</section>}
-  </Shell>
-}
-
-function Empty({ icon, title, text, action }: { icon: ReactNode, title: string, text: string, action?: ReactNode }) { return <div className="empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{text}</p>{action}</div> }
-
-function SubjectForm({ initial, onSave, onCancel, defaultTarget = 75 }: { initial?: Subject, onSave: (value: Omit<Subject, 'id' | 'createdAt'>) => void, onCancel?: () => void, defaultTarget?: number }) {
-  const [name, setName] = useState(initial?.name ?? ''); const [code, setCode] = useState(initial?.code ?? ''); const [type, setType] = useState<SubjectType>(initial?.subjectType ?? 'lecture'); const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]); const [target, setTarget] = useState(initial?.targetPercentage ?? defaultTarget); const [schedule, setSchedule] = useState<ScheduleItem[]>(initial?.schedule ?? [])
-  const toggleDay = (weekday: number) => setSchedule((value) => value.some((item) => item.weekday === weekday) ? value.filter((item) => item.weekday !== weekday) : [...value, { weekday, sessionsPerDay: 1 }])
-  const setSessions = (weekday: number, sessionsPerDay: number) => setSchedule((value) => value.map((item) => item.weekday === weekday ? { ...item, sessionsPerDay: Math.max(1, Math.min(6, sessionsPerDay)) } : item))
-  const submit = (event: FormEvent) => { event.preventDefault(); if (name.trim()) onSave({ name: name.trim(), code: code.trim() || undefined, subjectType: type, color, targetPercentage: target, isArchived: initial?.isArchived ?? false, schedule: schedule.sort((a, b) => a.weekday - b.weekday) }) }
-  return <form className="subject-form" onSubmit={submit}><label>Subject name<input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="Data Structures & Algorithms" /></label><div className="two-col"><label>Short code<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="DSA" /></label><label>Type<select value={type} onChange={(e) => setType(e.target.value as SubjectType)}><option value="lecture">Lecture</option><option value="lab">Lab</option><option value="tutorial">Tutorial</option></select></label></div><label>Target attendance<input type="number" min="1" max="100" value={target} onChange={(e) => setTarget(Number(e.target.value))} /></label><div className="form-group"><span className="label">Colour</span><div className="palette">{SUBJECT_COLORS.map((item) => <button type="button" aria-label={`Use ${item}`} key={item} className={cls('color-choice', color === item && 'selected')} style={{ background: item }} onClick={() => setColor(item)} />)}<label className="custom-color" title="Choose any colour"><input type="color" value={color} onChange={(e) => setColor(e.target.value)} /><span>Custom</span></label></div></div><div className="form-group"><span className="label">Weekly schedule</span><div className="weekday-chips">{weekdays.slice(1).map((day, index) => { const weekday = index + 1; const item = schedule.find((value) => value.weekday === weekday); return <button type="button" className={cls('weekday-chip', item && 'selected')} onClick={() => toggleDay(weekday)} key={day}>{day}</button> })}</div>{schedule.length > 0 && <div className="session-list">{schedule.map((item) => <div key={item.weekday}><span>{weekdays[item.weekday]}</span><label>Sessions<input type="number" min="1" max="6" value={item.sessionsPerDay} onChange={(e) => setSessions(item.weekday, Number(e.target.value))} /></label></div>)}</div>}</div><div className="form-actions">{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancel</button>}<button className="primary" type="submit">{initial ? 'Save changes' : 'Add subject'}</button></div></form>
-}
-
-function Onboarding() {
-  const navigate = useNavigate(); const { profile, saveProfile, addSubject, userId } = useStore(); const [step, setStep] = useState(1); const [branch, setBranch] = useState(profile?.branch ?? 'CSE'); const [semester, setSemester] = useState(profile?.semester ?? 1); const [drafts, setDrafts] = useState<Omit<Subject, 'id' | 'createdAt'>[]>([])
-  const saveSubject = (subject: Omit<Subject, 'id' | 'createdAt'>) => setDrafts((value) => [...value, subject])
-  const finish = () => { saveProfile({ id: profile?.id ?? userId ?? crypto.randomUUID(), branch, semester, defaultTargetPercentage: profile?.defaultTargetPercentage ?? 75 }); drafts.forEach(addSubject); navigate('/') }
-  return <main className="onboarding"><div className="onboarding-head"><NavLink to="/" className="brand"><span className="brand-mark">P</span>Presently</NavLink><span>Step {step} of 2</span></div><div className="progress"><i style={{ width: `${step * 50}%` }} /></div>{step === 1 ? <section className="wizard-card"><p className="eyebrow">A quick setup</p><h1>What are you studying?</h1><p>We’ll use this only to make Presently feel like yours.</p><label>Branch<select value={branch} onChange={(e) => setBranch(e.target.value)}><option>CSE</option><option>EEE</option><option>Mathematics & Scientific Computing</option><option>IPG-IT</option><option>Other</option></select></label><label>Current semester<input type="number" min="1" max="10" value={semester} onChange={(e) => setSemester(Number(e.target.value))} /></label><button className="primary full" onClick={() => setStep(2)}>Continue</button></section> : <section className="wizard-card wide"><p className="eyebrow">Your timetable</p><h1>Add your subjects</h1><p>Choose meeting days now. You can change every detail later.</p>{drafts.length > 0 && <div className="draft-subjects">{drafts.map((item, index) => <div key={`${item.name}-${index}`}><span className="subject-swatch" style={{ background: item.color }} /><span>{item.name}</span><button onClick={() => setDrafts((list) => list.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${item.name}`}><X size={16} /></button></div>)}</div>}<SubjectForm defaultTarget={profile?.defaultTargetPercentage ?? 75} onSave={saveSubject} />{drafts.length > 0 && <button className="primary full" onClick={finish}>Done — go to dashboard</button>}<button className="text-button back" onClick={() => setStep(1)}>Back</button></section>}</main>
-}
-
-function SubjectsPage() {
-  const { subjects, records, addSubject, updateSubject, profile } = useStore(); const [adding, setAdding] = useState(false); const [showArchived, setShowArchived] = useState(false); const visible = subjects.filter((subject) => showArchived || !subject.isArchived)
-  return <Shell><div className="page-heading"><div><p className="eyebrow">Your semester</p><h1>Subjects</h1></div><button className="round-button" onClick={() => setAdding(true)} aria-label="Add subject"><Plus size={22} /></button></div>{adding && <section className="modal-card"><div className="section-title"><h2>Add a subject</h2><button className="icon-button" onClick={() => setAdding(false)}><X /></button></div><SubjectForm defaultTarget={profile?.defaultTargetPercentage ?? 75} onCancel={() => setAdding(false)} onSave={(subject) => { addSubject(subject); setAdding(false) }} /></section>}
-    {visible.length === 0 ? <Empty icon={<GraduationCap />} title="No subjects here" text="Add your first subject and its weekly timetable." action={<button className="primary" onClick={() => setAdding(true)}>Add subject</button>} /> : <div className="subject-grid">{visible.map((subject) => { const stats = attendanceStats(records.filter((record) => record.subjectId === subject.id), subject.targetPercentage); const zone = safetyZone(stats.percentage, subject.targetPercentage); return <NavLink className={cls('subject-card', `card-${zone}`)} to={`/subjects/${subject.id}`} key={subject.id}><span className="subject-swatch" style={{ background: subject.color }} /><div><strong>{subject.name}</strong><p>{subject.code || subject.subjectType}</p></div><div className="card-attendance"><b>{stats.percentage === null ? '—' : `${stats.percentage}%`}</b><span>{stats.percentage === null ? 'No classes' : `${stats.present}/${stats.total}`}</span></div></NavLink> })}</div>}
-    {subjects.some((subject) => subject.isArchived) && <button className="archive-toggle" onClick={() => setShowArchived((value) => !value)}><Archive size={16} /> {showArchived ? 'Hide archived' : 'Show archived'}</button>}
-  </Shell>
-}
-
-function SubjectDetail() {
-  const { id } = useParams(); const navigate = useNavigate(); const { subjects, records, updateSubject, upsertRecord, removeRecord } = useStore(); const subject = subjects.find((item) => item.id === id); const [editing, setEditing] = useState(false)
-  if (!subject) return <Navigate to="/subjects" replace />
-  const subjectRecords = records.filter((record) => record.subjectId === subject.id); const stats = attendanceStats(subjectRecords, subject.targetPercentage); const zone = safetyZone(stats.percentage, subject.targetPercentage)
-  const safety = stats.percentage === null ? 'No classes recorded yet.' : stats.bunkable !== null ? `You can miss ${stats.bunkable} more class${stats.bunkable === 1 ? '' : 'es'} and stay at or above ${subject.targetPercentage}%.` : `Attend your next ${stats.comeback} class${stats.comeback === 1 ? '' : 'es'} in a row to reach ${subject.targetPercentage}%.`
-  return <Shell><button className="back-link" onClick={() => navigate('/subjects')}><ChevronLeft size={18} /> All subjects</button><div className="detail-head"><span className="subject-swatch large-swatch" style={{ background: subject.color }} /><div><p className="eyebrow">{subject.code || subject.subjectType}</p><h1>{subject.name}</h1></div><button className="icon-button" onClick={() => setEditing(!editing)} aria-label="Edit subject">{editing ? <X /> : <SettingsIcon />}</button></div>{editing && <section className="modal-card"><SubjectForm initial={subject} onCancel={() => setEditing(false)} onSave={(value) => { updateSubject(subject.id, value); setEditing(false) }} /><button className="danger-button full" onClick={() => { updateSubject(subject.id, { isArchived: !subject.isArchived }); navigate('/subjects') }}><Archive size={16} /> {subject.isArchived ? 'Restore subject' : 'Archive subject'}</button></section>}
-    <section className="detail-summary"><Ring percentage={stats.percentage} zone={zone} /><div className="counts"><span><b>{stats.present}</b>Present</span><span><b>{stats.absent}</b>Absent</span><span><b>{stats.cancelled}</b>Cancelled</span><span><b>{stats.holiday}</b>Holiday</span></div></section><section className={cls('safety-card', `safety-${zone}`)}><p className="eyebrow">Your safety margin</p><strong>{stats.bunkable ?? stats.comeback ?? '—'}</strong><p>{safety}</p></section>
-    <section className="section"><div className="section-title"><div><p className="eyebrow">All records</p><h2>Attendance history</h2></div></div>{subjectRecords.length === 0 ? <Empty icon={<CircleHelp />} title="No classes recorded" text="Your marks will appear here as you check in." /> : <div className="history">{[...subjectRecords].sort((a, b) => b.recordDate.localeCompare(a.recordDate)).map((record) => <HistoryRow record={record} onChange={(status) => upsertRecord(subject.id, record.recordDate, record.sessionIndex, status)} onDelete={() => removeRecord(record.id)} />)}</div>}</section>
-  </Shell>
-}
-
-function HistoryRow({ record, onChange, onDelete }: { record: AttendanceRecord, onChange: (status: AttendanceStatus) => void, onDelete: () => void }) {
-  const [open, setOpen] = useState(false); return <div className="history-row"><button className="history-main" onClick={() => setOpen((value) => !value)}><span className={cls('status-dot', `dot-${record.status}`)} /><span><strong>{format(toDate(record.recordDate), 'EEE, d MMM yyyy')}</strong><small>{STATUS_LABELS[record.status]}{record.sessionIndex > 1 ? ` · Session ${record.sessionIndex}` : ''}</small></span></button>{open && <div className="history-edit"><StatusControl value={record.status} onChange={onChange} /><button className="icon-button delete" onClick={onDelete} aria-label="Delete record"><Trash2 size={18} /></button></div>}</div>
-}
-
-function CalendarPage() {
-  const { subjects, records, upsertRecord } = useStore(); const [month, setMonth] = useState(startOfMonth(new Date())); const [selected, setSelected] = useState<Date | null>(null); const active = subjects.filter((subject) => !subject.isArchived); const days = eachDayOfInterval({ start: startOfWeek(startOfMonth(month), { weekStartsOn: 0 }), end: endOfWeek(endOfMonth(month), { weekStartsOn: 0 }) })
-  const dayStatus = (day: Date) => { const items = records.filter((record) => record.recordDate === format(day, 'yyyy-MM-dd')); if (items.some((item) => item.status === 'absent')) return 'absent'; if (items.some((item) => item.status === 'present')) return 'present'; if (items.length) return 'muted'; return '' }
-  const selectedSessions = selected ? scheduledSessions(active, selected) : []; const selectedDate = selected ? format(selected, 'yyyy-MM-dd') : ''
-  return <Shell><div className="page-heading"><div><p className="eyebrow">Backfill anytime</p><h1>Calendar</h1></div><button className="text-button" onClick={() => setMonth(startOfMonth(new Date()))}>Today</button></div><section className="calendar-card"><div className="calendar-toolbar"><button className="icon-button" onClick={() => setMonth(subMonths(month, 1))}><ChevronLeft /></button><h2>{format(month, 'MMMM yyyy')}</h2><button className="icon-button" onClick={() => setMonth(addMonths(month, 1))}><ChevronRight /></button></div><div className="calendar-weekdays">{weekdays.map((day) => <span key={day}>{day.slice(0, 1)}</span>)}</div><div className="calendar-grid">{days.map((day) => <button key={day.toISOString()} onClick={() => setSelected(day)} className={cls(!isSameMonth(day, month) && 'outside', isSameDay(day, new Date()) && 'is-today')}><span>{format(day, 'd')}</span><i className={cls('calendar-dot', dayStatus(day))} /></button>)}</div></section>{selected && <section className="modal-card day-modal"><div className="section-title"><div><p className="eyebrow">{format(selected, 'EEEE')}</p><h2>{format(selected, 'd MMMM')}</h2></div><button className="icon-button" onClick={() => setSelected(null)}><X /></button></div>{selectedSessions.length === 0 ? <Empty icon={<CalendarDays />} title="No scheduled classes" text="There’s nothing to mark for this date." /> : <>{<button className="secondary full" onClick={() => selectedSessions.forEach(({ subject, sessionIndex }) => upsertRecord(subject.id, selectedDate, sessionIndex, 'holiday'))}>Mark whole day as Holiday</button>}<div className="class-list">{selectedSessions.map(({ subject, sessionIndex }) => { const record = records.find((item) => item.subjectId === subject.id && item.recordDate === selectedDate && item.sessionIndex === sessionIndex); return <div className="class-row" key={`${subject.id}-${sessionIndex}`}><span className="subject-swatch" style={{ background: subject.color }} /><div className="class-name"><strong>{subject.name}</strong><span>{sessionIndex > 1 ? `Session ${sessionIndex}` : subject.code || subject.subjectType}</span></div><StatusControl compact value={record?.status} onChange={(status) => upsertRecord(subject.id, selectedDate, sessionIndex, status)} /></div> })}</div></>}</section>}</Shell>
-}
-
-function SettingsPage() {
-  const navigate = useNavigate(); const { profile, saveProfile, exportCsv, reset, signOut } = useStore(); const [branch, setBranch] = useState(profile?.branch ?? 'CSE'); const [semester, setSemester] = useState(profile?.semester ?? 1); const [target, setTarget] = useState(profile?.defaultTargetPercentage ?? 75); const [confirming, setConfirming] = useState(false); const [deleteText, setDeleteText] = useState('')
-  const download = () => { const blob = new Blob([exportCsv()], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'presently-attendance.csv'; link.click(); URL.revokeObjectURL(url) }
-  const save = () => { if (profile) saveProfile({ ...profile, branch, semester, defaultTargetPercentage: target }) }
-  return <Shell><div className="page-heading"><div><p className="eyebrow">Your preferences</p><h1>Settings</h1></div></div><section className="settings-group"><p className="eyebrow">Profile</p><label>Branch<select value={branch} onChange={(e) => setBranch(e.target.value)}><option>CSE</option><option>EEE</option><option>Mathematics & Scientific Computing</option><option>IPG-IT</option><option>Other</option></select></label><label>Current semester<input type="number" min="1" max="10" value={semester} onChange={(e) => setSemester(Number(e.target.value))} /></label><label>Default target attendance<input type="number" min="1" max="100" value={target} onChange={(e) => setTarget(Number(e.target.value))} /></label><button className="primary full" onClick={save}>Save preferences</button></section><section className="settings-group"><p className="eyebrow">Appearance</p><div className="setting-static"><span className="theme-dot" /><span><strong>Dark, always</strong><small>Presently uses a pure-black interface for focused daily check-ins.</small></span></div></section><section className="settings-group"><p className="eyebrow">Your data</p><button className="setting-action" onClick={download}><Download /><span><strong>Export my data</strong><small>Download all attendance records as a CSV</small></span></button><button className="setting-action" onClick={() => void signOut().then(() => navigate('/auth/sign-in'))}><LogOut /><span><strong>Sign out</strong><small>End this session and clear this device’s cached data</small></span></button></section><section className="settings-group danger-zone"><p className="eyebrow">Danger zone</p>{!confirming ? <button className="danger-button full" onClick={() => setConfirming(true)}><Trash2 size={16} /> Delete my local data</button> : <div className="delete-confirm"><p>Type <b>DELETE</b> to remove all locally stored app data.</p><input value={deleteText} onChange={(e) => setDeleteText(e.target.value)} placeholder="DELETE" /><button className="danger-button full" disabled={deleteText !== 'DELETE'} onClick={() => { reset(); navigate('/auth/sign-in') }}>Permanently delete data</button></div>}</section></Shell>
-}
-
-function Guard({ children }: { children: ReactNode }) { const { profile, ready } = useStore(); if (!ready) return <main className="auth"><div className="auth-card"><p className="eyebrow">Presently</p><h1>Loading your attendance…</h1></div></main>; return profile ? <>{children}</> : <Navigate to="/auth/sign-in" replace /> }
 
 export default function App() {
-  return <Routes><Route path="/auth/sign-in" element={<Auth />} /><Route path="/auth/sign-up" element={<Auth />} /><Route path="/onboarding" element={<Onboarding />} /><Route path="/" element={<Guard><Dashboard /></Guard>} /><Route path="/subjects" element={<Guard><SubjectsPage /></Guard>} /><Route path="/subjects/:id" element={<Guard><SubjectDetail /></Guard>} /><Route path="/calendar" element={<Guard><CalendarPage /></Guard>} /><Route path="/settings" element={<Guard><SettingsPage /></Guard>} /><Route path="*" element={<Navigate to="/" replace />} /></Routes>
+  return (
+    <Routes>
+      <Route path="/auth" element={<Auth />} />
+      {/* The previous release linked people to these paths directly. */}
+      <Route path="/auth/sign-in" element={<Navigate to="/auth" replace />} />
+      <Route path="/auth/sign-up" element={<Navigate to="/auth" replace />} />
+
+      <Route path="/onboarding" element={<Onboarding />} />
+
+      <Route
+        path="/"
+        element={
+          <Protected>
+            <Today />
+          </Protected>
+        }
+      />
+      <Route
+        path="/subjects"
+        element={
+          <Protected>
+            <Subjects />
+          </Protected>
+        }
+      />
+      <Route
+        path="/subjects/:id"
+        element={
+          <Protected>
+            <SubjectDetail />
+          </Protected>
+        }
+      />
+      <Route
+        path="/calendar"
+        element={
+          <Protected>
+            <Calendar />
+          </Protected>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <Protected>
+            <Settings />
+          </Protected>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
 }
