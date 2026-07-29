@@ -2,69 +2,69 @@
 
 ## Attendance, without the mental arithmetic.
 
-Presently is a beautifully focused attendance tracker for people who want a clear answer before they decide to miss a class.
+Presently is an attendance tracker for anyone who wants a straight answer before deciding to skip a class.
 
-Open the app. Mark what happened. See exactly where you stand.
+Open it. Mark what happened. See exactly where you stand.
 
 **Live:** [presently-beta.vercel.app](https://presently-beta.vercel.app)
 
 <br />
 
-## The important number, made obvious
+## The number that actually matters
 
-Most attendance trackers stop at a percentage. Presently goes one step further.
+Most trackers stop at a percentage. Presently goes one step further and tells you, per subject, one of two things:
 
-For every subject, it tells you one of two things:
-
-- **You can miss N more classes** and remain on target.
+- **You can miss N more classes** and stay on target.
 - **Attend your next N classes** to get back on target.
 
-That is the whole point: less calculation, less uncertainty, more confidence.
+That is the whole product. Less arithmetic, less second-guessing.
 
-## Designed for the everyday
+## What it does
 
-Presently is built as a calm, capable utility—not a dashboard full of noise.
+- A daily check-in listing every class scheduled for today
+- Four states per session: Present, Absent, Cancelled, Holiday
+- A calendar for backfilling or correcting any past day
+- Per-subject targets, timetables, history, archive and delete
+- Weighted overall attendance — pooled across classes, never an average of averages
+- Email sign-in by magic link or password
+- CSV export, light and dark themes, installable as an app
+- Works offline: changes are queued on the device and sent when you reconnect
 
-- A fast daily check-in for every scheduled class
-- Four clear states: Present, Absent, Cancelled, Holiday
-- A calendar for catching up or correcting a past day
-- Per-subject history, targets, schedules, and archive controls
-- Weighted overall attendance, never misleading averages
-- Private sign-in with email magic links or passwords
-- CSV export, dark mode, installable PWA support, and offline cached viewing
+## Open source
 
-## Open source, commercially usable
+Released under the [MIT License](LICENSE). Use it, change it, ship it, sell it — just keep the licence notice.
 
-Presently is released under the [MIT License](LICENSE). You are free to use, modify, distribute, sell, and build on it, provided the license notice is retained.
+## Run it locally
 
-The product name and visual identity are not a promise of endorsement or affiliation with any third party.
-
-## Build it locally
-
-Requirements: Node.js 22+ and npm.
+Requires Node.js 22 or newer.
 
 ```bash
 git clone https://github.com/nabrahma/Presently.git
 cd Presently
 npm install
-copy .env.example .env.local
 npm run dev
 ```
 
-Vite will print a local URL, normally `http://localhost:5173`.
+Vite prints a local URL, normally `http://localhost:5173`.
+
+Without Supabase credentials the app runs in local-only mode: everything works, and data stays in the browser. That is the fastest way to try a change.
 
 ## Connect Supabase
 
-Create `.env.local` from `.env.example`:
+Copy the example environment file and fill it in:
+
+```bash
+cp .env.example .env.local
+```
 
 ```dotenv
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
-The browser must only receive the publishable/anon key. Never commit a service-role key, database password, or Personal Access Token.
+Only the publishable/anon key belongs in the browser. Never commit a service-role key, database password, or personal access token.
 
-For a fresh project, apply the included schema:
+Apply the schema to a fresh project:
 
 ```bash
 npx supabase login
@@ -73,66 +73,80 @@ npx supabase db push --dry-run
 npx supabase db push
 ```
 
-Then set your deployed URL in **Authentication → URL Configuration** as both the Site URL and an allowed redirect URL. Add `http://localhost:5173` for local development.
+Then, under **Authentication → URL Configuration**, set your deployed URL as both the Site URL and an allowed redirect URL, and add `http://localhost:5173` for local development. Magic links will not return to the app without this.
 
-The complete schema, indexes, signup trigger, and Row Level Security policies are in [supabase/migrations/20260728_initial_schema.sql](supabase/migrations/20260728_initial_schema.sql).
+Migrations live in [supabase/migrations/](supabase/migrations/): the [initial schema](supabase/migrations/20260728_initial_schema.sql), then [constraints, triggers and indexes](supabase/migrations/20260729_harden_schema.sql).
 
-## The math
+## The maths
 
-Only Present and Absent count toward attendance. Cancelled and Holiday sessions are deliberately excluded.
+Only Present and Absent count. Cancelled and Holiday are deliberately excluded — they were never a chance to attend.
 
 ```text
 percentage = round(P / (P + A) × 100, 1)
-bunkable   = floor(P / target − (P + A))
-comeback   = ceil((target × (P + A) − P) / (1 − target))
+bunkable   = floor((P × 100 − target × T) / target)        where T = P + A
+comeback   = ceil((target × T − P × 100) / (100 − target))
 ```
 
-The overview is weighted across all active subjects. The implementation and examples are tested in [src/lib/attendanceMath.test.ts](src/lib/attendanceMath.test.ts).
+Both formulas are evaluated in integer space rather than with a fractional target. In floating point, `0.75 × 20` is `14.999999999999998`, which turns an exactly-on-target record into an off-by-one — a real difference when the answer is "you can miss one more".
+
+The implementation is in [src/lib/attendanceMath.ts](src/lib/attendanceMath.ts) and is tested against the worked examples plus exhaustive sweeps that assert each answer is both correct and minimal.
 
 ## Architecture
 
 | Layer | Choice |
 | --- | --- |
-| Application | React, TypeScript, Vite |
-| Interface | Custom accessible components, Lucide icons |
-| Authentication and data | Supabase Auth, Postgres, Row Level Security |
-| Installability | Workbox via vite-plugin-pwa |
+| Application | React 19, TypeScript, Vite |
+| Styling | Tailwind CSS v4, with the palette defined once as CSS custom properties |
+| Icons | Lucide |
+| Auth and data | Supabase Auth, Postgres, Row Level Security |
+| Offline and install | Workbox via vite-plugin-pwa |
 | Hosting | Vercel |
-
-The project deliberately stays small:
 
 ```text
 src/
-  App.tsx                 screens and routes
-  lib/attendanceMath.ts   tested, pure attendance calculations
-  lib/store.tsx           session-aware local/remote state
-  lib/supabaseClient.ts   browser-safe Supabase client
-supabase/
-  migrations/             versioned database schema
+  App.tsx              routes and access control
+  components/          dialog, forms, meters, shell
+  screens/             one file per route
+  lib/
+    attendanceMath.ts  pure, tested attendance calculations
+    date.ts            local-calendar date keys
+    schedule.ts        timetable expansion for a given day
+    csv.ts             export and escaping
+    store.tsx          state, sync, and the offline outbox
+supabase/migrations/   versioned database schema
 ```
 
-## Quality checks
+### How syncing works
+
+Every write updates the screen first, then goes to the server. If it fails — offline, flaky connection, server error — the entity is recorded in an outbox and retried on reconnect.
+
+The outbox holds *references*, not snapshots. A flush sends whatever the record looks like at that moment, so ten quick edits collapse into one request and a stale queue can never resurrect an old value. Unsent work is always replayed before a fetch, so refreshing cannot overwrite something you just changed.
+
+Attendance rows are keyed on `(subject, date, session)`. Row ids come from the database and the local id is reconciled with the server's on the first successful write, which is what makes deleting a freshly created record reliable.
+
+## Checks
 
 ```bash
-npm test
-npm run build
+npm run check     # typecheck, tests, production build
 ```
 
-The production build creates the PWA manifest, service worker, and static assets in `dist/`.
+Individually: `npm run typecheck`, `npm test`, `npm run build`.
+
+The test suite covers the attendance maths (including float boundaries and unreachable targets), local-date handling across timezones and DST, CSV escaping and formula injection, timetable expansion when a schedule changes mid-term, and full render passes over onboarding, the daily check-in, validation, persistence and dialog focus behaviour.
 
 ## Deploy
 
-Vercel deploys pushes to `main` automatically. For a manual production release:
+Vercel deploys `main` automatically. For a manual release:
 
 ```bash
 npx vercel --prod
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel for Production, Preview, and Development.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Production, Preview and Development.
 
 ## Privacy
 
-Every record is protected by Supabase Row Level Security and scoped to its authenticated owner. Presently keeps a small local cache for offline viewing, then clears that cache on sign-out before another account can load.
+Every row is scoped to its owner by Row Level Security, and a trigger rejects any attendance record filed against a subject you do not own. Presently keeps a local copy for offline use and clears it when you sign out, so the next person to open the app on a shared device sees nothing.
 
 ---
 

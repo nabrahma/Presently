@@ -1,36 +1,45 @@
-# Presently — Accepted Technical Design
+# Presently — Technical Design
 
-## Understanding
+## What this is
 
-Presently is a mobile-first, personal attendance-tracking PWA. It supports private accounts, subject schedules, one-tap daily marking, calendar backfilling, weighted attendance analytics, and the actionable per-subject safety margin for a default 75% target. It intentionally excludes institution integrations, social features, reminders, native applications, and complex scheduling.
+A personal attendance tracker, mobile-first, installable, backed by a private account. It covers subject timetables, a one-tap daily check-in, calendar backfilling, weighted analytics, and the per-subject safety margin against a target.
 
-## Assumptions and constraints
+It deliberately excludes institution integrations, social features, notifications, native apps, and anything resembling a timetable-scheduling engine.
 
-- This is personal-scale software deployed as a static Vercel site.
-- Supabase credentials will be provided through Vite environment variables before production deployment.
-- Browser-local dates are the authority for attendance records (the intended user region is India).
-- Offline functionality prioritizes cached viewing, immediate UI feedback, and retry on reconnect; it is not a full conflict-resolution system.
-- Accessibility, a 360px minimum viewport, private data access through Supabase RLS, and a low dependency footprint are baseline requirements.
+## Constraints
 
-## Decision log
+- Personal-scale software, deployed as a static site with a hosted Postgres behind it.
+- The device's local calendar day is the authority for what "today" means.
+- Offline support means: read what you have, write optimistically, retry on reconnect. It is not a conflict-resolution system.
+- Baselines, not stretch goals: a 360px viewport, keyboard and screen-reader access, colour never carrying meaning alone, per-user data isolation at the database level, and a small dependency footprint.
 
-| Decision | Alternatives considered | Reason |
+## Decisions
+
+| Decision | Alternatives | Reason |
 | --- | --- | --- |
-| Vite React client backed directly by Supabase | IndexedDB-only app; custom backend | Meets auth/privacy needs with lowest maintenance cost. |
-| TanStack Query for server state | Redux/Zustand; bespoke state | Enables compact optimistic mutations and automatic reconnect behavior. |
-| Small local accessible UI primitives with Tailwind | Large pre-generated component library | Preserves the shadcn design spirit while keeping the bundle and surface area small. |
-| Pure shared attendance math module | Per-page calculations | Guarantees consistent numbers and makes formulas directly testable. |
-| Native browser APIs plus lightweight PWA tooling | A large mobile framework | Provides installation and caching without treating a web app like a native app. |
-| No trend chart in v1 | Recharts-based analytics | Trend arrows/charts are optional and add dependency weight without changing core decisions. |
+| Vite React client talking straight to Supabase | Custom backend; IndexedDB-only | Meets the auth and privacy requirements with the least to maintain. |
+| Hand-rolled store with an outbox | TanStack Query; Redux | The hard part here is offline write ordering, not caching. An outbox models that directly; a query cache would sit beside it rather than solve it. |
+| Tailwind v4 over CSS custom properties | Hand-written CSS; a component library | One token layer defines the palette; utilities compose it. Themes stay a single source of truth and the bundle stays small. |
+| Local dialog primitive | Radix; Headless UI | One dialog pattern is used app-wide. Focus trap, Escape, focus restore and scroll lock are ~80 lines and avoid a dependency across the whole tree. |
+| Pure, shared attendance module | Per-screen calculation | Guarantees every screen shows the same number and makes the formulas directly testable. |
+| Integer arithmetic in the maths module | Fractional target | `0.75 × 20` is `14.999999999999998` in floating point, which silently breaks the exactly-on-target case. |
 
 ## Architecture
 
-React Router owns the specified routes and a shared authenticated shell. A typed Supabase client, query hooks, and optimistic mutations handle the profile, subjects, schedules, and records. Attendance rows are upserted using the unique subject/date/session key. The dashboard and calendar share the same schedule-expansion and status-control components. The PWA precaches the application shell and reports offline state clearly.
+React Router owns the routes behind a shared authenticated shell. Access control has three distinct states — loading, unauthenticated, setup-incomplete — and never collapses them, because collapsing "loading" into "unauthenticated" is what previously pushed returning users back through onboarding.
 
-## Reliability and testing
+The store holds one `AppData` value, persists it per account, and mirrors it into refs so background work reads committed state rather than a stale closure. Writes are optimistic; failures mark the entity dirty in an outbox and surface a toast. The outbox stores references rather than payloads, so replays always send current values.
 
-Mutations update immediately, roll back visibly on failure, and refetch/retry after reconnect. Attendance formulas are unit tested against the PRD examples and boundary cases. The app will be built and type checked before handoff, alongside manual checks for responsive layout, status replacement, export, keyboard focus, and color-independent labels.
+Timetable expansion is shared between the check-in and the calendar, and folds in records whose sessions no longer match the schedule — otherwise changing a timetable mid-term would hide already-marked classes from the only screen that can correct them.
 
-### Formula clarification
+## Data integrity
 
-The PRD's first comeback worked example has an arithmetic typo: with 12 presents from 17 counted classes at a 75% target, the required consecutive present classes are `ceil((0.75 × 17 − 12) / 0.25) = 3`, not 1. The implementation follows the stated formula and the verifiable 15/20 = 75% result.
+Row Level Security scopes every table to its owner. A trigger additionally rejects attendance filed against a subject belonging to someone else, and rejects dates in the future. Constraints cover blank names, colour format, target range, session counts, and length limits, so the client is not the only thing standing between a typo and the database.
+
+## Testing
+
+Attendance formulas are verified against the worked examples and by exhaustive sweeps asserting each answer is correct *and* minimal. Date handling is tested across timezone offsets, DST, leap years and month boundaries. CSV output is checked for quote escaping, newline flattening and spreadsheet formula injection. Render tests drive real flows — onboarding, marking a class, replacing a status, validation failures, persistence across a reload, corrupted cache recovery, and dialog focus behaviour.
+
+## Formula note
+
+The original specification's first worked example has an arithmetic slip: with 12 present out of 17 counted classes at a 75% target, the required run is `ceil((0.75 × 17 − 12) / 0.25) = 3`, not 1. The implementation follows the stated formula, which the verifiable `15 / 20 = 75%` result confirms.
