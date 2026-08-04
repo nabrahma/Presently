@@ -37,6 +37,48 @@ export const supabase = create()
 /** True when the build has real credentials, so cloud sync is available. */
 export const isCloudEnabled = supabase !== null
 
+/**
+ * True when a request failed only because the access token had aged out.
+ *
+ * These are recoverable and routine — a phone that has been asleep for hours
+ * wakes with an expired token — so they are refreshed and retried rather than
+ * reported as errors.
+ */
+export function isExpiredToken(error: unknown): boolean {
+  if (!error) return false
+  const failure = error as { code?: string; status?: number; message?: string }
+  const message = failure.message ?? ''
+
+  return (
+    failure.code === 'PGRST301' ||
+    failure.status === 401 ||
+    /jwt expired|jwt is expired|token is expired|invalid claim|bad_jwt/i.test(message)
+  )
+}
+
+/**
+ * Guarantees the client holds a usable access token before it is used.
+ *
+ * `autoRefreshToken` only ticks while the page is awake, so an installed app
+ * reopened after a long gap starts with a token that is already dead. Refreshing
+ * up front turns what would surface as a JWT error into a normal request.
+ */
+export async function ensureFreshSession(client: SupabaseClient): Promise<boolean> {
+  try {
+    const { data, error } = await client.auth.getSession()
+    if (error || !data.session) return false
+
+    const expiresAt = data.session.expires_at ? data.session.expires_at * 1000 : 0
+    // A minute of headroom covers the round trip and any clock skew.
+    if (expiresAt && expiresAt - Date.now() > 60_000) return true
+
+    const refreshed = await client.auth.refreshSession()
+    return !refreshed.error && Boolean(refreshed.data.session)
+  } catch {
+    return false
+  }
+}
+
 /** Turns any thrown value into something worth showing a person. */
 export function describeError(error: unknown): string {
   if (!error) return 'Something went wrong.'
@@ -61,6 +103,9 @@ export function describeError(error: unknown): string {
   }
   if (/password should be at least/i.test(message)) {
     return 'Passwords need at least 6 characters.'
+  }
+  if (/refresh token|session.*expired|not authenticated/i.test(message)) {
+    return 'Your session expired. Sign in again to keep syncing.'
   }
 
   return message || 'Something went wrong.'

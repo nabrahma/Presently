@@ -19,7 +19,13 @@ import type {
   Subject
 } from '../types'
 import { MAX_SEMESTER, MAX_TARGET, MIN_SEMESTER, MIN_TARGET } from '../types'
-import { describeError, isCloudEnabled, supabase } from './supabaseClient'
+import {
+  describeError,
+  ensureFreshSession,
+  isCloudEnabled,
+  isExpiredToken,
+  supabase
+} from './supabaseClient'
 import {
   EMPTY_DATA,
   EMPTY_OUTBOX,
@@ -172,53 +178,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     typeof navigator === 'undefined' ? true : navigator.onLine
   )
 
-  // Async work must read committed state, never the value captured when a
-  // handler was created.
+  /*
+    The refs are the source of truth, not a mirror of state.
+
+    Async work reads them immediately after a mutation, long before React has
+    committed a render. Updating them from an effect meant that signing in and
+    loading in the same tick saw a null user id and an empty queue, so pending
+    work was never replayed and the fetch that followed erased it.
+  */
   const dataRef = useRef(data)
   const outboxRef = useRef(outbox)
   const accountRef = useRef(account)
   const userIdRef = useRef(userId)
+  const persistRef = useRef(false)
 
-  useEffect(() => {
-    dataRef.current = data
-  }, [data])
-  useEffect(() => {
-    outboxRef.current = outbox
-  }, [outbox])
-  useEffect(() => {
-    accountRef.current = account
-  }, [account])
-  useEffect(() => {
-    userIdRef.current = userId
-  }, [userId])
-
-  /* --- persistence ------------------------------------------------------- */
-
-  useEffect(() => {
-    if (!hydrated) return
-    writeData(account, data)
-  }, [account, data, hydrated])
-
-  useEffect(() => {
-    if (!hydrated) return
-    writeOutbox(account, outbox)
-  }, [account, outbox, hydrated])
-
-  const markDirty = useCallback((change: (previous: Outbox) => Outbox) => {
-    setOutbox((previous) => change(previous))
+  /**
+   * Commits a value to the ref, to React, and to disk in one step.
+   *
+   * Persisting here rather than in an effect matters: marking a class and
+   * immediately swiping the app away used to kill the process before the
+   * effect ran, losing the very write it was meant to save.
+   */
+  const commitData = useCallback((next: AppData | ((previous: AppData) => AppData)) => {
+    const value = typeof next === 'function' ? next(dataRef.current) : next
+    dataRef.current = value
+    setData(value)
+    if (persistRef.current) writeData(accountRef.current, value)
   }, [])
+
+  const commitOutbox = useCallback((next: Outbox | ((previous: Outbox) => Outbox)) => {
+    const value = typeof next === 'function' ? next(outboxRef.current) : next
+    outboxRef.current = value
+    setOutbox(value)
+    if (persistRef.current) writeOutbox(accountRef.current, value)
+  }, [])
+
+  const commitAccount = useCallback((next: string, uid: string | null, canPersist: boolean) => {
+    accountRef.current = next
+    userIdRef.current = uid
+    persistRef.current = canPersist
+    setAccount(next)
+    setUserId(uid)
+  }, [])
+
+  const markDirty = commitOutbox
 
   /* --- remote writes ----------------------------------------------------- */
 
   /**
-   * Every remote write funnels through here so a failure has exactly one
-   * meaning: keep the optimistic local value and remember to retry.
+   * Every remote write funnels through here.
+   *
+   * The caller has already queued the entity before calling, so a failure
+   * simply leaves it queued; success is what removes it. An expired token is
+   * refreshed and the write retried once, because a phone waking from sleep
+   * hitting a dead token is routine rather than a fault.
    */
   const attempt = useCallback(
     async (
       // Supabase query builders are thenable rather than real promises.
       run: (client: SupabaseClient, uid: string) => PromiseLike<{ error: unknown }>,
-      onFailure: () => void,
       description: string
     ): Promise<boolean> => {
       const client = supabase
@@ -227,14 +245,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       try {
         const { error } = await run(client, uid)
-        if (error) throw error
+        if (!error) return true
+
+        if (!isExpiredToken(error)) throw error
+        if (!(await ensureFreshSession(client))) throw error
+
+        const retry = await run(client, uid)
+        if (retry.error) throw retry.error
         return true
       } catch (error) {
-        onFailure()
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           // Offline is expected, not an error worth interrupting anyone for.
           return false
         }
+        if (isExpiredToken(error)) return false // recoverable; the retry will come
         toast.error(`${description} did not sync`, { description: describeError(error) })
         return false
       }
@@ -244,20 +268,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const pushSubject = useCallback(
     async (subject: Subject) => {
-      const ok = await attempt(
-        async (client, uid) => {
-          const upsert = await client.from('subjects').upsert(subjectPayload(subject, uid))
-          if (upsert.error) return upsert
+      // Queued before the request leaves, so a process killed mid-flight still
+      // has a record of the intent.
+      markDirty((previous) => ({ ...previous, subjects: withId(previous.subjects, subject.id) }))
 
-          const cleared = await client.from('subject_schedule').delete().eq('subject_id', subject.id)
-          if (cleared.error) return cleared
+      const ok = await attempt(async (client, uid) => {
+        const upsert = await client.from('subjects').upsert(subjectPayload(subject, uid))
+        if (upsert.error) return upsert
 
-          if (subject.schedule.length === 0) return { error: null }
-          return client.from('subject_schedule').insert(schedulePayload(subject.id, subject.schedule))
-        },
-        () => markDirty((previous) => ({ ...previous, subjects: withId(previous.subjects, subject.id) })),
-        subject.name
-      )
+        const cleared = await client.from('subject_schedule').delete().eq('subject_id', subject.id)
+        if (cleared.error) return cleared
+
+        if (subject.schedule.length === 0) return { error: null }
+        return client.from('subject_schedule').insert(schedulePayload(subject.id, subject.schedule))
+      }, subject.name)
 
       if (ok) {
         markDirty((previous) => ({ ...previous, subjects: without(previous.subjects, subject.id) }))
@@ -277,16 +301,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const client = supabase
       const uid = userIdRef.current
-      if (!client || !uid) return
 
-      const failed = () =>
+      // Queued first and unconditionally. In guest mode there is nothing to
+      // send, but for an account this is what survives the app being closed
+      // the instant after a class is marked.
+      if (client && uid) {
         markDirty((previous) => ({
           ...previous,
           records: records.reduce((list, record) => withId(list, record.id), previous.records)
         }))
+      }
+      if (!client || !uid) return
 
-      try {
-        const { data: rows, error } = await client
+      const send = () =>
+        client
           .from('attendance_records')
           .upsert(
             records.map((record) => ({
@@ -301,10 +329,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           )
           .select('id, subject_id, record_date, session_index')
 
-        if (error) throw error
+      try {
+        let response = await send()
+
+        // A token that aged out while the app was closed is refreshed and the
+        // write repeated, rather than surfaced as a failure.
+        if (response.error && isExpiredToken(response.error)) {
+          if (await ensureFreshSession(client)) response = await send()
+        }
+        if (response.error) throw response.error
 
         const serverIds = new Map<string, string>()
-        for (const row of (rows ?? []) as Row[]) {
+        for (const row of (response.data ?? []) as Row[]) {
           serverIds.set(
             recordKey(String(row.subject_id), String(row.record_date), Number(row.session_index)),
             String(row.id)
@@ -312,7 +348,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         if (serverIds.size > 0) {
-          setData((previous) => ({
+          commitData((previous) => ({
             ...previous,
             records: previous.records.map((record) => {
               const serverId = serverIds.get(
@@ -323,12 +359,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }))
         }
 
+        // Confirmed on the server, so it no longer needs replaying. Matched on
+        // the natural key because the local id may have just been reconciled.
+        const settled = new Set(
+          records.map((record) => recordKey(record.subjectId, record.recordDate, record.sessionIndex))
+        )
         markDirty((previous) => ({
           ...previous,
-          records: previous.records.filter((id) => !records.some((record) => record.id === id))
+          records: previous.records.filter((id) => {
+            const record = dataRef.current.records.find((item) => item.id === id)
+            if (!record) return !records.some((sent) => sent.id === id)
+            return !settled.has(recordKey(record.subjectId, record.recordDate, record.sessionIndex))
+          })
         }))
       } catch (error) {
-        failed()
+        if (isExpiredToken(error)) return // stays queued for the next flush
         if (typeof navigator !== 'undefined' && navigator.onLine) {
           toast.error('Attendance did not sync', { description: describeError(error) })
         }
@@ -349,6 +394,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const pending = outboxRef.current
     if (!client || !uid || outboxSize(pending) === 0) return
 
+    // One refresh up front rather than an expiry failure on each entry below.
+    await ensureFreshSession(client)
+
     const current = dataRef.current
 
     for (const id of pending.deletedRecords) {
@@ -364,8 +412,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     if (pending.profile && current.profile) {
-      await pushProfileRemote(client, uid, current.profile)
-      markDirty((previous) => ({ ...previous, profile: false }))
+      const { error } = await pushProfileRemote(client, uid, current.profile)
+      if (!error) markDirty((previous) => ({ ...previous, profile: false }))
     }
 
     for (const id of pending.subjects) {
@@ -393,6 +441,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       setSyncing(true)
       try {
+        // An app reopened after a long gap starts with a dead access token.
+        // Refreshing before any query is what stops the JWT error on launch.
+        await ensureFreshSession(client)
+
         // Unsent work goes first, so a fetch can never overwrite it.
         await flush()
 
@@ -463,9 +515,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           )
         }
 
-        setData(remote)
+        commitData(remote)
       } catch (error) {
-        if (typeof navigator !== 'undefined' && navigator.onLine) {
+        if (typeof navigator !== 'undefined' && navigator.onLine && !isExpiredToken(error)) {
           toast.error('Could not refresh your attendance', { description: describeError(error) })
         }
       } finally {
@@ -473,7 +525,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setHydrated(true)
       }
     },
-    [flush]
+    [commitData, flush]
   )
 
   /* --- session ----------------------------------------------------------- */
@@ -481,9 +533,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!supabase) {
       // Without credentials the app is a purely local tool.
-      const stored = readData(GUEST_ACCOUNT)
-      setAccount(GUEST_ACCOUNT)
-      setData(stored)
+      commitAccount(GUEST_ACCOUNT, null, true)
+      commitData(readData(GUEST_ACCOUNT))
       setIsDemo(readMode() === 'demo')
       setHydrated(true)
       return
@@ -495,12 +546,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const enterGuest = () => {
       if (cancelled) return
       const demo = readMode() === 'demo'
-      setUserId(null)
+      commitAccount(GUEST_ACCOUNT, null, demo)
       setEmail(null)
-      setAccount(GUEST_ACCOUNT)
       setIsDemo(demo)
-      setData(demo ? readData(GUEST_ACCOUNT) : EMPTY_DATA)
-      setOutbox(EMPTY_OUTBOX)
+      commitData(demo ? readData(GUEST_ACCOUNT) : EMPTY_DATA)
+      commitOutbox(EMPTY_OUTBOX)
       setHydrated(true)
     }
 
@@ -511,11 +561,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Signing in ends any demo session; real data must never mix with it.
       writeMode(null)
       setIsDemo(false)
-      setUserId(uid)
       setEmail(userEmail)
-      setAccount(uid)
-      setData(cached)
-      setOutbox(readOutbox(uid))
+
+      // Account, data and queue are all committed synchronously before the
+      // load starts. Setting these through React alone left the load reading a
+      // null user and an empty queue, so it skipped the replay and then wrote
+      // the server's answer straight over the unsent marks.
+      commitAccount(uid, uid, true)
+      commitData(cached)
+      commitOutbox(readOutbox(uid))
 
       // A device with no cache has nothing trustworthy to show, so the app
       // keeps its loading state until the first fetch resolves. Showing an
@@ -554,7 +608,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelled = true
       listener.subscription.unsubscribe()
     }
-  }, [loadAccount])
+  }, [commitAccount, commitData, commitOutbox, loadAccount])
 
   /* --- connectivity ------------------------------------------------------ */
 
@@ -565,17 +619,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const goOffline = () => setOnline(false)
 
+    /**
+     * Reopening an installed app fires this rather than a fresh load, so it is
+     * the moment to refresh a token that died while the app was away and to
+     * replay anything the previous session could not finish.
+     */
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) void flush()
+      if (document.visibilityState !== 'visible') return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+
+      const uid = userIdRef.current
+      if (!uid || !supabase) return
+
+      void (async () => {
+        await ensureFreshSession(supabase)
+        await flush()
+      })()
+    }
+
+    /*
+      The last chance to persist before the process is frozen or killed.
+      Commits are already synchronous, so this only has to catch a queue that
+      changed during an in-flight request.
+    */
+    const persistNow = () => {
+      if (!persistRef.current) return
+      writeData(accountRef.current, dataRef.current)
+      writeOutbox(accountRef.current, outboxRef.current)
     }
 
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)
+    window.addEventListener('pagehide', persistNow)
     document.addEventListener('visibilitychange', onVisible)
+    document.addEventListener('visibilitychange', persistNow)
     return () => {
       window.removeEventListener('online', goOnline)
       window.removeEventListener('offline', goOffline)
+      window.removeEventListener('pagehide', persistNow)
       document.removeEventListener('visibilitychange', onVisible)
+      document.removeEventListener('visibilitychange', persistNow)
     }
   }, [flush])
 
@@ -593,28 +676,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         onboarded: input.onboarded ?? true
       }
 
-      setData((previous) => ({ ...previous, profile: next }))
+      commitData((previous) => ({ ...previous, profile: next }))
 
       const client = supabase
       if (!client || !uid) return
 
-      const { error } = await pushProfileRemote(client, uid, next)
-      if (error) {
-        markDirty((previous) => ({ ...previous, profile: true }))
-        if (navigator.onLine) {
-          toast.error('Preferences did not sync', { description: describeError(error) })
-        }
-        return
-      }
-      markDirty((previous) => ({ ...previous, profile: false }))
+      // Queued before sending, cleared only once the server has it.
+      markDirty((previous) => ({ ...previous, profile: true }))
+
+      const ok = await attempt(
+        (activeClient, activeUid) => pushProfileRemote(activeClient, activeUid, next),
+        'Preferences'
+      )
+
+      if (ok) markDirty((previous) => ({ ...previous, profile: false }))
     },
-    [markDirty]
+    [attempt, markDirty]
   )
 
   const addSubject = useCallback<Store['addSubject']>(
     async (input) => {
       const subject: Subject = { ...input, id: createId(), createdAt: nowIso() }
-      setData((previous) => ({ ...previous, subjects: [...previous.subjects, subject] }))
+      commitData((previous) => ({ ...previous, subjects: [...previous.subjects, subject] }))
       await pushSubject(subject)
       return subject.id
     },
@@ -627,7 +710,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!existing) return
 
       const next: Subject = { ...existing, ...changes }
-      setData((previous) => ({
+      commitData((previous) => ({
         ...previous,
         subjects: previous.subjects.map((subject) => (subject.id === id ? next : subject))
       }))
@@ -638,7 +721,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteSubject = useCallback<Store['deleteSubject']>(
     async (id) => {
-      setData((previous) => ({
+      commitData((previous) => ({
         ...previous,
         subjects: previous.subjects.filter((subject) => subject.id !== id),
         // Records go too: the database cascades, and leaving them locally would
@@ -646,11 +729,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         records: previous.records.filter((record) => record.subjectId !== id)
       }))
 
-      markDirty((previous) => ({ ...previous, subjects: without(previous.subjects, id) }))
+      // The upsert queue no longer applies; the deletion takes its place.
+      markDirty((previous) => ({
+        ...previous,
+        subjects: without(previous.subjects, id),
+        deletedSubjects: withId(previous.deletedSubjects, id)
+      }))
 
       const ok = await attempt(
         (client) => client.from('subjects').delete().eq('id', id),
-        () => markDirty((previous) => ({ ...previous, deletedSubjects: withId(previous.deletedSubjects, id) })),
         'Deleting the subject'
       )
 
@@ -667,7 +754,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const touched: AttendanceRecord[] = []
 
-      setData((previous) => {
+      commitData((previous) => {
         const records = [...previous.records]
         const timestamp = nowIso()
 
@@ -712,16 +799,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const removeRecord = useCallback<Store['removeRecord']>(
     async (id) => {
-      setData((previous) => ({
+      commitData((previous) => ({
         ...previous,
         records: previous.records.filter((record) => record.id !== id)
       }))
 
-      markDirty((previous) => ({ ...previous, records: without(previous.records, id) }))
+      // The upsert queue no longer applies; the deletion takes its place.
+      markDirty((previous) => ({
+        ...previous,
+        records: without(previous.records, id),
+        deletedRecords: withId(previous.deletedRecords, id)
+      }))
 
       const ok = await attempt(
         (client) => client.from('attendance_records').delete().eq('id', id),
-        () => markDirty((previous) => ({ ...previous, deletedRecords: withId(previous.deletedRecords, id) })),
         'Removing the record'
       )
 
@@ -737,6 +828,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const client = supabase
 
     if (client && uid) {
+      await ensureFreshSession(client)
+
       // Subjects cascade to schedules and records; the profile is reset rather
       // than deleted so the account keeps working.
       const removal = await client.from('subjects').delete().eq('user_id', uid)
@@ -756,9 +849,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearAccount(accountRef.current)
     writeMode(null)
     setIsDemo(false)
-    setOutbox(EMPTY_OUTBOX)
-    setData(EMPTY_DATA)
-  }, [])
+    commitOutbox(EMPTY_OUTBOX)
+    commitData(EMPTY_DATA)
+  }, [commitData, commitOutbox])
 
   const signOut = useCallback<Store['signOut']>(async () => {
     const previousAccount = accountRef.current
@@ -778,24 +871,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearAccount(previousAccount)
     writeMode(null)
 
-    setUserId(null)
     setEmail(null)
-    setAccount(GUEST_ACCOUNT)
     setIsDemo(false)
-    setData(EMPTY_DATA)
-    setOutbox(EMPTY_OUTBOX)
+    // Persistence off: a signed-out device should leave nothing behind.
+    commitAccount(GUEST_ACCOUNT, null, false)
+    commitData(EMPTY_DATA)
+    commitOutbox(EMPTY_OUTBOX)
     setHydrated(true)
-  }, [])
+  }, [commitAccount, commitData, commitOutbox])
 
   const startDemo = useCallback<Store['startDemo']>(() => {
     writeMode('demo')
     setIsDemo(true)
-    setAccount(GUEST_ACCOUNT)
-    setUserId(null)
-    setData(demoData())
-    setOutbox(EMPTY_OUTBOX)
+    commitAccount(GUEST_ACCOUNT, null, true)
+    commitData(demoData())
+    commitOutbox(EMPTY_OUTBOX)
     setHydrated(true)
-  }, [])
+  }, [commitAccount, commitData, commitOutbox])
 
   const refresh = useCallback<Store['refresh']>(async () => {
     const uid = userIdRef.current

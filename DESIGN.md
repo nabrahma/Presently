@@ -54,6 +54,30 @@ The store holds one `AppData` value, persists it per account, and mirrors it int
 
 Timetable expansion is shared between the check-in and the calendar, and folds in records whose sessions no longer match the schedule — otherwise changing a timetable mid-term would hide already-marked classes from the only screen that can correct them.
 
+## Write durability
+
+The store keeps its authoritative values in refs and mirrors them into React,
+not the other way round. Async work reads them the instant a mutation happens,
+long before a render commits — deriving them from an effect meant that signing
+in and loading in the same tick observed a null user and an empty queue, so
+pending work was skipped and the fetch that followed erased it.
+
+Three rules follow from that, and together they are what makes a mark survive
+the app being closed a moment later:
+
+1. A mutation writes the value, the queue entry and both storage keys
+   synchronously. Effects can be beaten by a frozen or killed process.
+2. The queue entry is created before the request is sent and cleared only on a
+   confirmed response, so an aborted request is indistinguishable from a failed
+   one and both are retried.
+3. A load flushes the queue first, then lays anything still queued back over
+   the server's answer. Remote data can never overwrite an unsent local change.
+
+Access tokens expire while an installed app sits closed, so the session is
+refreshed before any query on launch and on resume, and a write rejected for an
+aged-out token is refreshed and retried once. That failure is routine and is
+handled rather than reported.
+
 ## Data integrity
 
 Row Level Security scopes every table to its owner. A trigger additionally rejects attendance filed against a subject belonging to someone else, and rejects dates in the future. Constraints cover blank names, colour format, target range, session counts, and length limits, so the client is not the only thing standing between a typo and the database.

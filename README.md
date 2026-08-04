@@ -134,11 +134,15 @@ second theme to switch to.
 
 ### How syncing works
 
-Every write updates the screen first, then goes to the server. If it fails — offline, flaky connection, server error — the entity is recorded in an outbox and retried on reconnect.
+Every write updates the screen, is queued, and goes to the server — in that order. The queue entry is written *before* the request leaves and removed only once the server confirms, so a request killed in flight (closing the app the instant after marking a class) still leaves a record of the intent. Anything left in the queue is replayed on reconnect, on resume, and at the start of the next load.
 
-The outbox holds *references*, not snapshots. A flush sends whatever the record looks like at that moment, so ten quick edits collapse into one request and a stale queue can never resurrect an old value. Unsent work is always replayed before a fetch, so refreshing cannot overwrite something you just changed.
+Both the data and the queue are written to storage synchronously as part of the mutation rather than in an effect. An effect can be beaten by the process being frozen or killed, which is exactly the moment durability matters.
 
-Attendance rows are keyed on `(subject, date, session)`. Row ids come from the database and the local id is reconciled with the server's on the first successful write, which is what makes deleting a freshly created record reliable.
+The queue holds *references*, not snapshots. A flush sends whatever the record looks like at that moment, so ten quick edits collapse into one request and a stale queue can never resurrect an old value. Unsent work is always replayed before a fetch, and anything still queued afterwards is laid back over the server's answer, so a refresh can never overwrite something that has not been sent yet.
+
+Attendance rows are keyed on `(subject, date, session)`. Ids come from the database and the local id is reconciled with the server's on the first successful write, which is what makes deleting a freshly created record reliable.
+
+Access tokens expire while an installed app sits closed. The session is refreshed before any query on launch and on resume, and a write rejected for an aged-out token is refreshed and retried once rather than reported — that class of failure is routine, not something worth interrupting anyone for.
 
 ## Checks
 

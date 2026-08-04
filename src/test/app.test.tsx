@@ -137,9 +137,7 @@ describe('calendar', () => {
     const user = await completeSetup(false)
 
     await user.click(screen.getByRole('link', { name: /calendar/i }))
-    // The route is code-split; the runner transforms that chunk on demand,
-    // which is far slower here than the cached fetch a browser makes.
-    await screen.findByRole('heading', { name: /^calendar$/i }, { timeout: 10_000 })
+    await screen.findByRole('heading', { name: /^calendar$/i })
 
     for (const day of screen.queryAllByRole('button', { name: /in the future/i })) {
       expect((day as HTMLButtonElement).disabled).toBe(true)
@@ -170,19 +168,15 @@ describe('persistence', () => {
 })
 
 describe('dialogs', () => {
-  it('opens and closes the subject sheet', async () => {
+  // The sheet's own behaviour is covered in sheet.test.tsx, where it can be
+  // driven without a route transition in the way. This checks only the wiring.
+  it('opens the subject sheet from the add button', async () => {
     const user = await completeSetup(false)
 
     await user.click(screen.getByRole('link', { name: /subjects/i }))
-    const add = await screen.findByRole('button', { name: /add a subject/i })
-    await user.click(add)
+    await user.click(await screen.findByRole('button', { name: /add a subject/i }))
 
     expect(await screen.findByRole('dialog')).toBeTruthy()
-
-    // The drawer's contents mount after the dialog itself, and the form is a
-    // shared code-split chunk the runner transforms on demand.
-    await user.click(await screen.findByRole('button', { name: /cancel/i }, { timeout: 10_000 }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
 

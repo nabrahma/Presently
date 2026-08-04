@@ -57,6 +57,8 @@ export default defineConfig({
     // `@vitest-environment` comment, which keeps the fast tests fast.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
-    setupFiles: ['src/test/setup.ts']
+    setupFiles: ['src/test/setup.ts'],
+    // Generous, because the render suites pay for on-demand chunk transforms.
+    testTimeout: 30_000
   }
 })
