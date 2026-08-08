@@ -70,6 +70,9 @@ export function Settings() {
     <>
       <ScreenHead label={isDemo ? 'Demo session' : (email ?? 'This device')} title="Settings" />
 
+      {/* Two independent groups, so they sit side by side rather than making
+          a wide screen scroll for no reason. */}
+      <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-8">
       <Panel className="px-5 py-5">
         <p className="label mb-4">Defaults</p>
 
@@ -148,7 +151,7 @@ export function Settings() {
         </div>
       </Panel>
 
-      <div className="mt-7">
+      <div className="mt-7 lg:mt-0">
         <SectionHead label="Data" />
 
         <ActionRow
@@ -199,6 +202,7 @@ export function Settings() {
           destructive
           onClick={() => setConfirmWipe(true)}
         />
+      </div>
       </div>
 
       <p className="mt-8 text-center font-mono text-[0.6rem] leading-relaxed tracking-[0.08em] text-ink-faint uppercase">

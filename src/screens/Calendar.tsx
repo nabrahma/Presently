@@ -109,7 +109,9 @@ export function Calendar() {
         }
       />
 
-      <Panel className="px-3 py-4">
+      {/* The month never needs the whole width of a desktop; past a point the
+          cells just get larger without telling you anything more. */}
+      <Panel className="px-3 py-4 md:mx-auto md:max-w-[34rem] md:px-5 md:py-6">
         <div className="mb-4 flex items-center justify-between px-2">
           <button
             type="button"
@@ -162,16 +164,18 @@ export function Calendar() {
                 }`}
                 aria-current={isToday ? 'date' : undefined}
                 className={cn(
-                  'relative grid aspect-square place-items-center font-mono text-[0.76rem] tabular-nums',
+                  'relative grid aspect-square place-items-center font-mono text-[0.76rem] tabular-nums md:text-[0.85rem]',
                   future ? 'text-ink-faint/30' : 'active:opacity-60',
                   outside && !future && 'text-ink-faint'
                 )}
               >
                 <span
                   className={cn(
-                    'grid h-8 w-8 place-items-center rounded-full',
+                    'grid h-8 w-8 place-items-center rounded-full md:h-10 md:w-10',
                     isToday && 'bg-accent text-bg',
-                    !isToday && !outside && !future && 'text-ink'
+                    !isToday && !outside && !future && 'text-ink',
+                    // With a pointer, days invite a click.
+                    !isToday && !future && 'md:transition-colors md:hover:bg-elevated'
                   )}
                 >
                   {format(day, 'd')}

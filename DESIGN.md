@@ -42,6 +42,31 @@ The shell pins itself to the viewport with exactly one scroll region inside it.
 The page itself never scrolls, which removes the rubber-band bounce that gives a
 PWA away. Today is sized to fit a normal timetable without scrolling at all.
 
+## Widths and pointers
+
+Three tiers, with the phone as the baseline: under 768px it is a bottom dock and
+a single column; from 768px that same navigation becomes a sidebar rail and
+subjects become a card grid; from 1024px Today and each subject split into a
+working column beside a sticky summary rail.
+
+The navigation is one element that restyles, not a phone copy plus a desktop
+copy. Two sets of links would mean two identical menus in the accessibility
+tree, and a test asserts there is only ever one.
+
+Two decisions are keyed to the pointer rather than the width, because that is
+what they are really about:
+
+- Suppressing text selection and tap highlights is what stops a phone feeling
+  like a web page, and is exactly wrong on a desktop where selecting and copying
+  is expected. It applies to coarse pointers only.
+- The modal is a draggable drawer on touch and a centred dialog with a mouse.
+  That is a difference in behaviour rather than appearance, so it is a branch in
+  the markup rather than a media query in CSS. Both sit on Radix Dialog, so
+  focus trapping and Escape behave identically either way.
+
+Content stops widening before the viewport does. A data row stretched across a
+1600px display is unreadable, so the reading column caps and centres.
+
 ## Architecture
 
 React Router owns the routes behind a shared authenticated shell, mounted once

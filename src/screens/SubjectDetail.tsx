@@ -124,7 +124,10 @@ export function SubjectDetail() {
         </button>
       </header>
 
-      <Panel className="px-5 py-5">
+      {/* The margin and its history sit side by side once there is room, so
+          the number stays in view while the history is scrolled. */}
+      <div className="lg:flex lg:items-start lg:gap-8">
+      <Panel className="px-5 py-5 lg:sticky lg:top-0 lg:w-[22rem] lg:shrink-0">
         <Readout label="Margin" value={margin.value} suffix={margin.caption} tone={margin.tone} size="xl" />
         <p className="mt-4 text-[0.82rem] leading-relaxed text-ink-muted">{explanation}</p>
 
@@ -158,7 +161,7 @@ export function SubjectDetail() {
         </dl>
       </Panel>
 
-      <div className="mt-7">
+      <div className="mt-7 min-w-0 lg:mt-0 lg:flex-1">
         <SectionHead label={`History · ${subjectRecords.length}`} />
 
         {subjectRecords.length === 0 ? (
@@ -190,6 +193,7 @@ export function SubjectDetail() {
             ))}
           </div>
         )}
+      </div>
       </div>
 
       <Sheet open={editing} onClose={() => setEditing(false)} title="Edit subject">

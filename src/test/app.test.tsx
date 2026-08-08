@@ -167,6 +167,20 @@ describe('persistence', () => {
   })
 })
 
+describe('navigation', () => {
+  it('renders exactly one set of section links', async () => {
+    await completeSetup(false)
+
+    // The dock and the desktop rail are the same element restyled. Rendering a
+    // second copy for wide screens would duplicate every link in the document
+    // and give screen readers two identical menus.
+    for (const label of ['Today', 'Subjects', 'Calendar', 'Settings']) {
+      expect(screen.getAllByRole('link', { name: label })).toHaveLength(1)
+    }
+    expect(screen.getAllByRole('navigation')).toHaveLength(1)
+  })
+})
+
 describe('dialogs', () => {
   // The sheet's own behaviour is covered in sheet.test.tsx, where it can be
   // driven without a route transition in the way. This checks only the wiring.

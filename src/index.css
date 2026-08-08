@@ -64,26 +64,41 @@
     isolation: isolate;
   }
 
-  /* Chrome is not a document: selecting and long-press menus read as web. */
-  body {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
+  /*
+    Touch-only behaviour, keyed on the pointer rather than the screen size.
 
-  input,
-  textarea,
-  [contenteditable='true'] {
-    -webkit-user-select: text;
-    user-select: text;
-  }
+    Suppressing selection and long-press menus is what stops a phone from
+    feeling like a web page, but on a desktop it breaks the ordinary
+    expectation that text can be selected and copied.
+  */
+  @media (pointer: coarse) {
+    body {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
 
-  * {
-    -webkit-tap-highlight-color: transparent;
+    input,
+    textarea,
+    [contenteditable='true'] {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
   }
 
   button {
     touch-action: manipulation;
+  }
+
+  /* A pointer can hit smaller targets, so rows may respond to hover. */
+  @media (hover: hover) {
+    .hover-row:hover {
+      background-color: var(--color-surface);
+    }
   }
 
   :focus-visible {
@@ -115,16 +130,40 @@
     color: var(--color-accent-ink);
   }
 
-  /* A visible scrollbar inside a phone-sized app looks like a browser. */
   .scroll-region {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
   }
 
-  .scroll-region::-webkit-scrollbar {
-    display: none;
+  /* A visible scrollbar inside a phone-sized app looks like a browser. */
+  @media (pointer: coarse) {
+    .scroll-region {
+      scrollbar-width: none;
+    }
+
+    .scroll-region::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  /* With a mouse the scrollbar is the position indicator, so it stays. */
+  @media (pointer: fine) {
+    .scroll-region {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-line-strong) transparent;
+    }
+
+    .scroll-region::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .scroll-region::-webkit-scrollbar-thumb {
+      border: 3px solid transparent;
+      background-clip: content-box;
+      border-radius: 999px;
+      background-color: var(--color-line-strong);
+    }
   }
 }
 

@@ -4,8 +4,26 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Sheet } from '../components/Sheet'
+
+/** Forces the media query the desktop/touch split is keyed on. */
+function setDesktop(matches: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string) =>
+      ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false
+      }) as unknown as MediaQueryList
+  )
+}
 
 /*
   The sheet is the app's only modal surface, so its behaviour is covered here
@@ -37,7 +55,39 @@ function Harness({ onClose }: { onClose?: () => void } = {}) {
   )
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+describe('Sheet on a pointer-driven screen', () => {
+  it('is a centred dialog with no drag handle', async () => {
+    setDesktop(true)
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: 'Open sheet' }))
+    const dialog = await screen.findByRole('dialog')
+
+    // A bottom drawer on a wide display is a phone gesture with nothing to
+    // perform it, so the desktop branch is a dialog with a close button.
+    expect(screen.getByRole('button', { name: /close edit subject/i })).toBeTruthy()
+    expect(dialog.className).toContain('-translate-x-1/2')
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+  })
+
+  it('still closes on Escape', async () => {
+    setDesktop(true)
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: 'Open sheet' }))
+    await screen.findByRole('dialog')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
 
 describe('Sheet', () => {
   it('is absent until it is opened', () => {

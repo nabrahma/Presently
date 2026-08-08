@@ -55,13 +55,20 @@ export function Readout({
 export function DataRow({
   className,
   children,
-  onClick
+  onClick,
+  bare = false
 }: {
   className?: string
   children: ReactNode
   onClick?: () => void
+  /** Drops the dividing rule so a caller can own the row's edges entirely. */
+  bare?: boolean
 }) {
-  const base = 'flex w-full items-center gap-3 border-b border-line py-3.5 last:border-b-0 text-left'
+  const base = cn(
+    'flex w-full items-center gap-3 py-3.5 text-left',
+    !bare && 'border-b border-line last:border-b-0'
+  )
+
   if (!onClick) return <div className={cn(base, className)}>{children}</div>
 
   return (

@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
 import { Drawer } from 'vaul'
+import { X } from 'lucide-react'
+import { useDesktop } from '../lib/useMediaQuery'
 
 interface SheetProps {
   open: boolean
@@ -11,22 +14,89 @@ interface SheetProps {
 }
 
 /**
- * The app's only modal surface, built on Vaul so it drags and flicks away the
- * way a native sheet does. Vaul sits on Radix Dialog underneath, so focus
- * trapping, Escape, focus restore and scroll locking come with it.
+ * The app's only modal surface, in the shape the device expects.
+ *
+ * On a phone it is a Vaul drawer that drags and flicks away. With a pointer it
+ * is a centred dialog, because a panel sliding up from the bottom edge of a
+ * wide display is a phone gesture wearing the wrong clothes — and there is
+ * nothing to drag it with.
+ *
+ * Both sit on Radix Dialog, so focus trapping, Escape, focus restore and
+ * scroll locking behave identically either way.
  */
 export function Sheet({ open, onClose, title, description, children, footer }: SheetProps) {
+  const desktop = useDesktop()
+
+  const onOpenChange = (next: boolean) => {
+    if (!next) onClose()
+  }
+
+  const body = (
+    <>
+      <div className="scroll-region min-h-0 flex-1 px-5 pb-5 md:px-6">{children}</div>
+      {footer ? (
+        <div
+          className="shrink-0 border-t border-line px-5 pt-4 md:px-6"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          {footer}
+        </div>
+      ) : (
+        <div aria-hidden style={{ height: 'env(safe-area-inset-bottom)' }} />
+      )}
+    </>
+  )
+
+  if (desktop) {
+    return (
+      <Dialog.Root open={open} onOpenChange={onOpenChange}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            className="fixed inset-0 z-40 bg-black/70 backdrop-blur-[2px]
+                       data-[state=open]:animate-[fade-in_.15s_ease-out]"
+          />
+          <Dialog.Content
+            className="fixed top-1/2 left-1/2 z-50 flex max-h-[85dvh] w-[min(34rem,calc(100vw-3rem))]
+                       -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl border border-line
+                       bg-surface shadow-2xl outline-none
+                       data-[state=open]:animate-[dialog-in_.18s_cubic-bezier(0.32,0.72,0,1)]"
+          >
+            <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
+              <div className="min-w-0">
+                <Dialog.Title className="readout truncate text-[1.15rem]">{title}</Dialog.Title>
+                {description ? (
+                  <Dialog.Description className="mt-1.5 text-[0.8rem] text-ink-muted">
+                    {description}
+                  </Dialog.Description>
+                ) : (
+                  <Dialog.Description className="sr-only">{title}</Dialog.Description>
+                )}
+              </div>
+              <Dialog.Close
+                aria-label={`Close ${title}`}
+                className="-mt-1 -mr-1.5 grid h-9 w-9 shrink-0 place-items-center rounded-full
+                           text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
+              >
+                <X size={17} strokeWidth={2} />
+              </Dialog.Close>
+            </div>
+            {body}
+          </Dialog.Content>
+        </Dialog.Portal>
+
+        <style>{`
+          @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+          @keyframes dialog-in {
+            from { opacity: 0; transform: translate(-50%, -46%) scale(.97) }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1) }
+          }
+        `}</style>
+      </Dialog.Root>
+    )
+  }
+
   return (
-    <Drawer.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose()
-      }}
-      // A sheet that can be dragged past its top edge looks broken on a
-      // fixed-height shell.
-      dismissible
-      repositionInputs={false}
-    >
+    <Drawer.Root open={open} onOpenChange={onOpenChange} dismissible repositionInputs={false}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-[2px]" />
 
@@ -50,18 +120,7 @@ export function Sheet({ open, onClose, title, description, children, footer }: S
             </div>
           </div>
 
-          <div className="scroll-region min-h-0 flex-1 px-5 pb-5">{children}</div>
-
-          {footer ? (
-            <div
-              className="shrink-0 border-t border-line px-5 pt-4"
-              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-            >
-              {footer}
-            </div>
-          ) : (
-            <div aria-hidden style={{ height: 'env(safe-area-inset-bottom)' }} />
-          )}
+          {body}
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>

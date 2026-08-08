@@ -89,7 +89,11 @@ export function Subjects() {
           }
         />
       ) : (
-        <div>
+        /* A divided list on a phone; a card grid once there is width for one,
+           because a full-bleed row across a desktop is mostly empty space.
+           The dividers come from the container so the cards can own their
+           own outline without the two rules competing. */
+        <div className="divide-y divide-line md:grid md:grid-cols-2 md:gap-3 md:divide-y-0 xl:grid-cols-3">
           {visible.map((subject) => (
             <SubjectRow
               key={subject.id}
@@ -127,8 +131,16 @@ function SubjectRow({ subject, records }: { subject: Subject; records: Attendanc
   const perWeek = weeklyLoad(subject)
 
   return (
-    <Link to={`/subjects/${subject.id}`} className="block">
-      <DataRow className="py-4">
+    <Link to={`/subjects/${subject.id}`} className="block h-full">
+      <DataRow
+        bare
+        className={cn(
+          'py-4',
+          // With width, the row becomes an outlined card.
+          'md:h-full md:rounded-panel md:border md:border-line md:px-4',
+          'md:transition-colors md:hover:border-line-strong'
+        )}
+      >
         <span
           aria-hidden
           className="h-9 w-[2px] shrink-0 rounded-full"

@@ -16,10 +16,12 @@ const NAV = [
 /**
  * The persistent frame every screen renders into.
  *
- * This is a layout route rather than a wrapper each screen imports, so the
- * header and dock are mounted once for the life of the session. That is what
- * lets the dock indicator slide between tabs and stops the chrome flashing on
- * every navigation — the thing that most makes a PWA read as a web page.
+ * One layout, three sizes. Below `md` it is a phone: a bottom dock and a single
+ * column. From `md` the same nav becomes a sidebar rail. From `lg` screens get
+ * the room for the two-column workspaces the screens themselves opt into.
+ *
+ * The navigation is a single element that restyles rather than a phone copy
+ * plus a desktop copy, so there is only ever one set of links in the document.
  */
 export function Shell() {
   const location = useLocation()
@@ -34,45 +36,29 @@ export function Shell() {
   }, [location.pathname])
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[30rem] flex-col">
-      <header
-        className="flex shrink-0 items-center justify-between px-5 pb-3"
-        style={{ paddingTop: 'max(0.9rem, env(safe-area-inset-top))' }}
-      >
-        <NavLink to="/" className="flex items-baseline gap-2" aria-label="Presently, go to today">
-          <span className="font-mono text-[0.95rem] font-medium tracking-[-0.02em] text-ink">
-            Presently
-          </span>
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
-        </NavLink>
-
-        <StatusFlag online={online} syncing={syncing} pending={pendingCount} demo={isDemo} />
-      </header>
-
-      <main ref={scrollRef} className="scroll-region min-h-0 flex-1 px-5">
-        <Suspense fallback={<Booting />}>
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
-            >
-              <Outlet />
-              {/* Clears the dock so the last row is never trapped behind it. */}
-              <div aria-hidden className="h-6" />
-            </motion.div>
-          </AnimatePresence>
-        </Suspense>
-      </main>
-
+    <div className="flex h-full w-full flex-col md:flex-row">
       <nav
         aria-label="Sections"
-        className="shrink-0 px-5 pt-2"
-        style={{ paddingBottom: 'max(0.9rem, env(safe-area-inset-bottom))' }}
+        className={cn(
+          // Phone: a floating dock pinned under the content.
+          'order-last shrink-0 px-4 pt-2 md:order-first',
+          // Desktop: a full-height rail beside it.
+          'md:flex md:w-[13.5rem] md:flex-col md:border-r md:border-line md:px-3 md:py-5 lg:w-[15rem]',
+          // The safe area only exists on the phone layout; the rail ignores it.
+          'pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-5'
+        )}
       >
-        <div className="flex items-center gap-1 rounded-full border border-line bg-surface p-1.5">
+        <span className="mb-1 hidden px-3 md:block">
+          <span className="label">Menu</span>
+        </span>
+
+        <div
+          className={cn(
+            'flex items-center gap-1 rounded-full border border-line bg-surface p-1.5',
+            // The rail drops the pill container and stacks the links.
+            'md:flex-col md:items-stretch md:gap-0.5 md:rounded-none md:border-0 md:bg-transparent md:p-0'
+          )}
+        >
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -82,7 +68,8 @@ export function Shell() {
                 cn(
                   'relative flex flex-1 items-center justify-center gap-1.5 rounded-full py-2.5',
                   'font-mono text-[0.62rem] font-medium tracking-[0.1em] uppercase transition-colors',
-                  isActive ? 'text-bg' : 'text-ink-muted'
+                  'md:flex-none md:justify-start md:gap-3 md:rounded-xl md:px-3 md:py-2.5 md:text-[0.7rem]',
+                  isActive ? 'text-bg md:text-accent-ink' : 'text-ink-muted md:hover:text-ink'
                 )
               }
             >
@@ -93,18 +80,57 @@ export function Shell() {
                        cross-fading, which is what makes it read as a control. */
                     <motion.span
                       layoutId="dock-active"
-                      className="absolute inset-0 rounded-full bg-accent"
+                      className="absolute inset-0 rounded-full bg-accent md:rounded-xl md:bg-accent-solid"
                       transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                     />
                   ) : null}
-                  <Icon size={14} strokeWidth={2} className="relative z-10" />
+                  <Icon size={14} strokeWidth={2} className="relative z-10 md:size-4" />
                   <span className="relative z-10">{label}</span>
                 </>
               )}
             </NavLink>
           ))}
         </div>
+
+        <span className="mt-auto hidden px-3 md:block">
+          <span className="label">Presently</span>
+        </span>
       </nav>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-between px-5 pt-[max(0.9rem,env(safe-area-inset-top))] pb-3 md:px-8 md:pt-5 md:pb-4">
+          <NavLink to="/" className="flex items-baseline gap-2" aria-label="Presently, go to today">
+            <span className="font-mono text-[0.95rem] font-medium tracking-[-0.02em] text-ink">
+              Presently
+            </span>
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
+          </NavLink>
+
+          <StatusFlag online={online} syncing={syncing} pending={pendingCount} demo={isDemo} />
+        </header>
+
+        <main ref={scrollRef} className="scroll-region min-h-0 flex-1 px-5 md:px-8">
+          {/* Content stops widening well before the viewport does; a data row
+              stretched across 1600px is unreadable. */}
+          <div className="mx-auto w-full max-w-[30rem] md:max-w-[42rem] lg:max-w-[72rem]">
+            <Suspense fallback={<Booting />}>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={location.pathname}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <Outlet />
+                  {/* Clears the dock so the last row is never trapped behind it. */}
+                  <div aria-hidden className="h-6 md:h-10" />
+                </motion.div>
+              </AnimatePresence>
+            </Suspense>
+          </div>
+        </main>
+      </div>
     </div>
   )
 }
@@ -158,10 +184,10 @@ export function ScreenHead({
   action?: ReactNode
 }) {
   return (
-    <div className="mb-6 flex items-end justify-between gap-4">
+    <div className="mb-6 flex items-end justify-between gap-4 md:mb-8">
       <div className="min-w-0">
         <p className="label">{label}</p>
-        <h1 className="readout mt-2.5 truncate text-[1.9rem]">{title}</h1>
+        <h1 className="readout mt-2.5 truncate text-[1.9rem] md:text-[2.3rem]">{title}</h1>
       </div>
       {action}
     </div>

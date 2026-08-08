@@ -123,14 +123,33 @@ supabase/migrations/   versioned database schema
 
 Presently is installed and opened for a few seconds a day, so it is built as an
 app rather than a page. The viewport is pinned, exactly one region scrolls, and
-the header and dock are a layout route that mounts once — so navigating between
-tabs moves an indicator instead of repainting the chrome. Sheets are draggable,
-taps have no highlight rectangle, safe areas are respected, and inputs are 16px
-so focusing one never zooms the layout.
+the header and navigation are a layout route that mounts once — so moving
+between tabs slides an indicator instead of repainting the chrome. Safe areas
+are respected, and inputs are 16px so focusing one never zooms the layout.
 
 The look is a single committed one: black canvas, one green accent, hairline
 outlines and mono numerals. There is no theme switcher, because there is no
 second theme to switch to.
+
+### One app, three widths
+
+The phone layout is the baseline and is unchanged by anything below it.
+
+| Width | Layout |
+| --- | --- |
+| under 768px | Phone. Bottom dock, one column, drag-to-dismiss sheets. |
+| 768px and up | The dock becomes a sidebar rail; subjects become a card grid. |
+| 1024px and up | Today and each subject split into a working column plus a sticky summary rail. |
+
+Two details are keyed to the *pointer* rather than the width, because that is
+what they are actually about. Text selection and tap-highlight suppression
+apply only to coarse pointers, so a desktop can select and copy normally. And
+the modal is a draggable bottom drawer on touch but a centred dialog with a
+mouse — a panel sliding up from the bottom edge of a wide display is a phone
+gesture with nothing to perform it.
+
+Content stops widening well before the viewport does. A data row stretched
+across 1600px is unreadable, so the reading column caps out and centres.
 
 ### How syncing works
 
