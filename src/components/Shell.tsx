@@ -97,7 +97,13 @@ export function Shell() {
         </span>
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/*
+        min-h-0 is load-bearing. A flex item defaults to min-height:auto, so
+        without it this column refuses to shrink below its content, the main
+        region never becomes the thing that scrolls, and the dock is pushed off
+        the bottom of the viewport.
+      */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center justify-between px-5 pt-[max(0.9rem,env(safe-area-inset-top))] pb-3 md:px-8 md:pt-5 md:pb-4">
           <NavLink to="/" className="flex items-baseline gap-2" aria-label="Presently, go to today">
             <span className="font-mono text-[0.95rem] font-medium tracking-[-0.02em] text-ink">

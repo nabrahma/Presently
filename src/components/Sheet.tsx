@@ -53,7 +53,7 @@ export function Sheet({ open, onClose, title, description, children, footer }: S
         <Dialog.Portal>
           <Dialog.Overlay
             className="fixed inset-0 z-40 bg-black/70 backdrop-blur-[2px]
-                       data-[state=open]:animate-[fade-in_.15s_ease-out]"
+                       data-[state=open]:animate-[overlay-in_.15s_ease-out]"
           />
           <Dialog.Content
             className="fixed top-1/2 left-1/2 z-50 flex max-h-[85dvh] w-[min(34rem,calc(100vw-3rem))]
@@ -83,14 +83,6 @@ export function Sheet({ open, onClose, title, description, children, footer }: S
             {body}
           </Dialog.Content>
         </Dialog.Portal>
-
-        <style>{`
-          @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
-          @keyframes dialog-in {
-            from { opacity: 0; transform: translate(-50%, -46%) scale(.97) }
-            to { opacity: 1; transform: translate(-50%, -50%) scale(1) }
-          }
-        `}</style>
       </Dialog.Root>
     )
   }

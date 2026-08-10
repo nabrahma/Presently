@@ -40,37 +40,36 @@ export function Today() {
 
   const unmarked = sessions.filter((slot) => !marked.has(`${slot.subject.id}|${slot.sessionIndex}`))
 
-  const atRisk = useMemo(
-    () =>
-      active
-        .map((subject) => ({
-          subject,
-          stats: attendanceStats(
-            records.filter((record) => record.subjectId === subject.id),
-            subject.targetPercentage,
-          ),
-        }))
+  /*
+    Both figures below come from the same per-subject pass. Computing them
+    separately meant walking every record twice for every subject on each
+    render, to reach two halves of one answer.
+  */
+  const { atRisk, spare } = useMemo(() => {
+    const bySubject = new Map<string, typeof records>()
+    for (const record of records) {
+      const list = bySubject.get(record.subjectId)
+      if (list) list.push(record)
+      else bySubject.set(record.subjectId, [record])
+    }
+
+    const scored = active.map((subject) => ({
+      subject,
+      stats: attendanceStats(bySubject.get(subject.id) ?? [], subject.targetPercentage)
+    }))
+
+    return {
+      atRisk: scored
         .filter(
           ({ subject, stats }) =>
-            stats.percentage !== null && stats.percentage < subject.targetPercentage,
+            stats.percentage !== null && stats.percentage < subject.targetPercentage
         )
         .sort((a, b) => (a.stats.percentage ?? 0) - (b.stats.percentage ?? 0)),
-    [active, records],
-  )
-
-  // Total spare classes across everything still on target — the one number
-  // that answers "can I skip today".
-  const spare = useMemo(
-    () =>
-      active.reduce((total, subject) => {
-        const stats = attendanceStats(
-          records.filter((record) => record.subjectId === subject.id),
-          subject.targetPercentage,
-        )
-        return total + (stats.bunkable ?? 0)
-      }, 0),
-    [active, records],
-  )
+      // Spare classes across everything still on target — the one number that
+      // answers "can I skip today".
+      spare: scored.reduce((total, { stats }) => total + (stats.bunkable ?? 0), 0)
+    }
+  }, [active, records])
 
   const zone = safetyZone(overall.percentage, target)
 
