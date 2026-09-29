@@ -130,8 +130,8 @@ export function Settings() {
           </div>
 
           <p className="text-[0.74rem] leading-relaxed text-ink-faint">
-            The target applies to your overall percentage and to new subjects. Existing subjects keep
-            their own.
+            Every subject is held to its own target. This one is the starting point for new
+            subjects; existing subjects keep theirs.
           </p>
 
           {!valid ? (

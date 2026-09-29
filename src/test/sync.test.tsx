@@ -299,7 +299,7 @@ describe('marking attendance', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
 
     await waitFor(() => expect(server.records).toHaveLength(1))
@@ -310,7 +310,7 @@ describe('marking attendance', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
 
     // Without reconciliation the local id stays provisional, and a later
@@ -322,7 +322,7 @@ describe('marking attendance', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
 
     await waitFor(() => expect(readOutbox(USER.id).records).toHaveLength(0))
@@ -336,7 +336,7 @@ describe('a mark that never reached the server', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
 
     // Written synchronously, so closing the app right here cannot lose it.
@@ -349,7 +349,7 @@ describe('a mark that never reached the server', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
     await waitFor(() => expect(readOutbox(USER.id).records.length).toBeGreaterThan(0))
 
@@ -360,7 +360,7 @@ describe('a mark that never reached the server', () => {
     server.writesFail = false
 
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     await waitFor(() => expect(server.records).toHaveLength(1))
     expect(server.records[0].status).toBe('present')
@@ -377,7 +377,7 @@ describe('a mark that never reached the server', () => {
     const user = userEvent.setup()
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await user.click(screen.getAllByRole('button', { name: 'Absent' })[0])
     await waitFor(() => expect(readOutbox(USER.id).records.length).toBeGreaterThan(0))
 
@@ -396,7 +396,7 @@ describe('an expired token', () => {
   it('is retried rather than reported when a write is rejected', async () => {
     const user = userEvent.setup()
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     server.expireNextToken = true
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
@@ -412,7 +412,7 @@ describe('an expired token', () => {
     server.expiresIn = 10
     mount()
 
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     await waitFor(() => expect(server.refreshes).toBeGreaterThan(0))
     expect(screen.queryByText(/could not refresh/i)).toBeNull()
   })
@@ -420,7 +420,7 @@ describe('an expired token', () => {
   it('is recognised in the shape PostgREST 12 and later report it', async () => {
     const user = userEvent.setup()
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     server.expiredError = { code: 'PGRST303', message: 'JWT expired' }
     server.expireNextToken = true
@@ -436,7 +436,7 @@ describe('an expired token', () => {
     // would fail the same way forever.
     const user = userEvent.setup()
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     server.refreshes = 0
 
     server.expireNextToken = true
@@ -449,7 +449,7 @@ describe('an expired token', () => {
   it('leaves the mark queued when the retry also fails', async () => {
     const user = userEvent.setup()
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     server.writesFail = true
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
@@ -462,7 +462,7 @@ describe('a token the database says was issued in its future', () => {
   it('is waited out rather than reported or refreshed', async () => {
     const user = userEvent.setup()
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
     server.refreshes = 0
 
     server.earlyUntil = Date.now() + 1_000
@@ -476,7 +476,7 @@ describe('a token the database says was issued in its future', () => {
 
   it('is retried in the background when it outlasts the inline waits', async () => {
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     vi.useFakeTimers()
     server.earlyUntil = Date.now() + 10_000
@@ -510,20 +510,20 @@ describe('a token the database says was issued in its future', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(20_000))
     vi.useRealTimers()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
   })
 })
 
 describe('session events', () => {
   it('does not reload the account for a token refresh alone', async () => {
     mount()
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     await act(async () => {
       h.auth.callback?.('TOKEN_REFRESHED', { user: USER })
       await Promise.resolve()
     })
 
-    expect(screen.getByText('Overall')).toBeTruthy()
+    expect(screen.getByText('Least spare')).toBeTruthy()
   })
 })

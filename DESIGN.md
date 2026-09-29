@@ -2,7 +2,7 @@
 
 ## What this is
 
-A personal attendance tracker, mobile-first, installable, backed by a private account. It covers subject timetables, a one-tap daily check-in, calendar backfilling, weighted analytics, and the per-subject safety margin against a target.
+A personal attendance tracker, mobile-first, installable, backed by a private account. It covers subject timetables, a one-tap daily check-in, calendar backfilling, and the per-subject safety margin against a target. Every subject is judged on its own, as colleges judge it; there is no pooled overall figure.
 
 It deliberately excludes institution integrations, social features, notifications, native apps, and anything resembling a timetable-scheduling engine.
 

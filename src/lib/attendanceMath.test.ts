@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attendanceStats, normalizeTarget, safetyZone } from './attendanceMath'
+import { attendanceStats, normalizeTarget, safetyZone, standings } from './attendanceMath'
 import type { AttendanceRecord, AttendanceStatus } from '../types'
 
 let counter = 0
@@ -137,5 +137,56 @@ describe('safetyZone', () => {
     expect(safetyZone(75, 75)).toBe('caution')
     expect(safetyZone(79.9, 75)).toBe('caution')
     expect(safetyZone(80, 75)).toBe('safe')
+  })
+})
+
+describe('standings', () => {
+  const entry = (name: string, present: number, absent: number, target = 75) => ({
+    item: name,
+    stats: attendanceStats(build(present, absent), target),
+    target
+  })
+
+  // The demo account: two subjects comfortably above 75%, one well below.
+  const demo = [entry('DSA', 18, 3), entry('DBMS-L', 12, 2), entry('MA201', 10, 6)]
+
+  it('names the subject furthest below its target as the lowest', () => {
+    expect(standings(demo).lowest?.item).toBe('MA201')
+  })
+
+  it('reports the smallest margin, not the sum of every margin', () => {
+    // 3 spare in DSA and 2 in DBMS-L is not 5 to spend anywhere: missing a
+    // third DBMS-L class drops it below target.
+    const { leastSpare } = standings(demo)
+    expect(leastSpare?.item).toBe('DBMS-L')
+    expect(leastSpare?.stats.bunkable).toBe(2)
+  })
+
+  it('lists every subject under target, worst first', () => {
+    const below = standings([...demo, entry('PHY', 14, 5)]).below.map((item) => item.item)
+    expect(below).toEqual(['MA201', 'PHY'])
+  })
+
+  it('judges each subject against its own target', () => {
+    // 80% clears a 75% target but not an 85% one.
+    const { lowest, below } = standings([entry('Easy', 8, 2, 75), entry('Strict', 8, 2, 85)])
+    expect(lowest?.item).toBe('Strict')
+    expect(below.map((item) => item.item)).toEqual(['Strict'])
+  })
+
+  it('counts a subject that rounds to its target but sits under it as below', () => {
+    // 299 of 399 is 74.94%, displayed as 74.9, and one class short.
+    const { below } = standings([entry('Edge', 299, 100)])
+    expect(below).toHaveLength(1)
+  })
+
+  it('leaves out subjects with nothing counted yet', () => {
+    const result = standings([entry('New', 0, 0), entry('DSA', 18, 3)])
+    expect(result.lowest?.item).toBe('DSA')
+    expect(standings([entry('New', 0, 0)])).toEqual({ lowest: null, leastSpare: null, below: [] })
+  })
+
+  it('has no spare figure when every subject is under target', () => {
+    expect(standings([entry('MA201', 10, 6)]).leastSpare).toBeNull()
   })
 })

@@ -11,7 +11,7 @@ And exactly how many you need.
 
 <br />
 
-<img src="docs/screenshots/today.png" width="250" alt="Today: overall attendance of 78.4% against a 75% target, 5 classes you can still miss, and three classes to mark for today." />
+<img src="docs/screenshots/today.png" width="250" alt="Today: the lowest subject, MA201 at 62.5% against an 80% target, the least spare of any subject at 2 classes, and today's three classes, each showing its own margin." />
 &nbsp;&nbsp;
 <img src="docs/screenshots/subjects.png" width="250" alt="Subjects: three courses, each with its attendance percentage and a bar showing it against the target." />
 &nbsp;&nbsp;
@@ -25,11 +25,13 @@ And exactly how many you need.
 
 A percentage tells you where you have been. Presently tells you what to do next.
 
-For every subject, it answers one of two questions:
+Colleges hold every subject to the line on its own, so Presently does too. For each subject, it tells you one of two things:
 
-> **You can miss 5 more classes** and stay on target.
+> **Miss your next 3 classes** and you are still on target.
 >
 > **Attend your next 14 classes** to get back on target.
+
+It never needs to guess how many classes are left in the term. The number is worked out from what has already happened, so it is always true right now. Every class you attend raises it. Cancellations and holidays never change it.
 
 No spreadsheet. No calculator. No guessing whether one more skip is the one that costs you.
 
@@ -39,7 +41,7 @@ No spreadsheet. No calculator. No guessing whether one more skip is the one that
 
 Open it, and today's classes are already waiting. Tap **P**, **A**, **C** or **H** for Present, Absent, Cancelled or Holiday. Or mark the whole day at once with **All present**.
 
-Your overall figure, your margin and the subjects that need attention update the moment you tap. Nothing to save, nothing to sync by hand.
+Each class shows its own subject's margin right beside it, so "can I skip this one?" has an answer before you decide. Above the list sits the subject closest to the line, never an average that hides it. Everything updates the moment you tap. Nothing to save, nothing to sync by hand.
 
 <br />
 
@@ -60,7 +62,7 @@ The calendar shows your whole term at a glance: a dot under every day, coloured 
 ## Honest maths, not flattering maths.
 
 - **Cancelled and Holiday never count.** They were never a chance to attend, so they never move your number.
-- **Overall is weighted by class, not averaged by subject.** A subject that meets five times a week counts five times as much as one that meets once.
+- **Every subject on its own.** No overall percentage to hide a failing subject behind, and no adding margins together. Three spare in one subject and two in another is not five to spend anywhere.
 - **Exact to the class.** The formulas run in whole numbers, so being exactly on target never gets rounded into an off-by-one. That matters when the answer is "you can miss one more".
 
 <br />
@@ -189,6 +191,10 @@ comeback   = ceil((target × T − P × 100) / (100 − target))
 ```
 
 Both formulas are evaluated in integer space rather than with a fractional target. In floating point, `0.75 × 20` is `14.999999999999998`, which turns an exactly-on-target record into an off-by-one. That is a real difference when the answer is "you can miss one more".
+
+`bunkable` assumes you miss every class that happens from now on, so it needs no guess about how many classes remain. It is a floor: attending raises it, and cancellations and holidays leave it untouched.
+
+Every figure is per subject, against that subject's own target. The Today summary ranks subjects with `standings` rather than pooling them: it shows the subject furthest below or closest to its target, and the *smallest* spare margin rather than a sum of margins. Whether a subject is on target is decided in integer space too, so 74.96% counts as below 75% even though it displays as 75.0.
 
 The implementation is in [src/lib/attendanceMath.ts](src/lib/attendanceMath.ts). It is tested against the worked examples, plus exhaustive sweeps that check each answer is both correct and minimal.
 

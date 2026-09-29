@@ -89,10 +89,49 @@ export function safetyZone(percentage: number | null, target: number): SafetyZon
   return 'safe'
 }
 
+/** True when the subject meets its target, decided in integer space. */
+export function isOnTarget(stats: AttendanceStats): boolean {
+  return stats.bunkable !== null
+}
+
+export interface Standing<T> {
+  item: T
+  stats: AttendanceStats
+  target: number
+}
+
 /**
- * Overall attendance pools every counted class rather than averaging subject
- * percentages, so a subject with two classes cannot outweigh one with thirty.
+ * Where a set of subjects stands, judged the way colleges judge it: each
+ * subject against its own target.
+ *
+ * There is deliberately no pooled figure. A healthy overall percentage can sit
+ * on top of one subject that is below the line, and that one subject is what
+ * decides whether someone can sit the exam. Nor are spare classes summed:
+ * three spare in one subject and two in another is not five to spend anywhere.
+ *
+ *   lowest      the subject furthest below, or closest to, its own target
+ *   leastSpare  of the subjects on target, the one with the fewest to spare
+ *   below       every subject under target, worst first
+ *
+ * Subjects with nothing counted yet have no standing and are left out.
  */
-export function overallStats(records: AttendanceRecord[], targetPercentage: number): AttendanceStats {
-  return attendanceStats(records, targetPercentage)
+export function standings<T>(entries: Standing<T>[]) {
+  const counted = entries.filter((entry) => entry.stats.total > 0)
+
+  // Percentage points above (or below) the subject's own target, unrounded so
+  // two subjects that both display 75.0% still order correctly.
+  const gap = ({ stats, target }: Standing<T>) =>
+    (stats.present / stats.total) * 100 - normalizeTarget(target)
+
+  const byGap = [...counted].sort((a, b) => gap(a) - gap(b))
+
+  const onTarget = counted
+    .filter((entry) => isOnTarget(entry.stats))
+    .sort((a, b) => (a.stats.bunkable ?? 0) - (b.stats.bunkable ?? 0) || gap(a) - gap(b))
+
+  return {
+    lowest: byGap[0] ?? null,
+    leastSpare: onTarget[0] ?? null,
+    below: byGap.filter((entry) => !isOnTarget(entry.stats))
+  }
 }

@@ -104,7 +104,7 @@ afterEach(cleanup)
 describe('the scroll chain', () => {
   it('lets every flexible ancestor of the scroll region shrink', async () => {
     mount('/')
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     const region = document.querySelector('main.scroll-region')
     expect(region).not.toBeNull()
@@ -126,7 +126,7 @@ describe('the scroll chain', () => {
 
   it('keeps the scroll region itself able to shrink', async () => {
     mount('/')
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     const tokens = classesOf(document.querySelector('main.scroll-region')!)
     expect(tokens).toContain('min-h-0')
@@ -135,7 +135,7 @@ describe('the scroll chain', () => {
 
   it('pins the shell to the viewport so the page never scrolls', async () => {
     mount('/')
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     const shell = document.querySelector('main.scroll-region')!.closest('.h-full')
     expect(shell).not.toBeNull()
@@ -144,7 +144,7 @@ describe('the scroll chain', () => {
 
   it('keeps the navigation out of the scrolling region', async () => {
     mount('/')
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     const nav = screen.getByRole('navigation')
     // Inside the scroll region the dock would scroll away with the content.
@@ -156,7 +156,7 @@ describe('the scroll chain', () => {
 describe('screen structure', () => {
   it('renders one scroll region, not one per screen', async () => {
     mount('/')
-    await screen.findByText('Overall')
+    await screen.findByText('Least spare')
 
     expect(document.querySelectorAll('main.scroll-region')).toHaveLength(1)
   })

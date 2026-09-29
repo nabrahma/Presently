@@ -78,7 +78,7 @@ export function SubjectDetail() {
       : stats.bunkable !== null
         ? stats.bunkable === 0
           ? `Exactly on target. One more absence drops you below ${subject.targetPercentage}%.`
-          : `You can miss ${stats.bunkable} more ${stats.bunkable === 1 ? 'class' : 'classes'} and stay at or above ${subject.targetPercentage}%.`
+          : `Miss your next ${stats.bunkable === 1 ? 'class' : `${stats.bunkable} classes`} and you are still at ${subject.targetPercentage}% or above. Attending raises this; cancellations and holidays never change it.`
         : stats.comeback !== null
           ? `Attend the next ${stats.comeback} ${stats.comeback === 1 ? 'class' : 'classes'} in a row to reach ${subject.targetPercentage}%.`
           : `A ${subject.targetPercentage}% target cannot be recovered once a class has been missed.`
@@ -228,8 +228,7 @@ export function SubjectDetail() {
             )}
           </button>
           <p className="text-[0.72rem] leading-relaxed text-ink-faint">
-            Archiving keeps the history but removes the subject from your daily check-in and overall
-            percentage.
+            Archiving keeps the history but removes the subject from your daily check-in and summary.
           </p>
 
           <button

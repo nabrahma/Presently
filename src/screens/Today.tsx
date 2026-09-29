@@ -6,7 +6,12 @@ import { Gauge, Meter } from '../components/Gauge'
 import { DataRow, Panel, Readout, SectionHead } from '../components/Panel'
 import { ScreenHead } from '../components/Shell'
 import { StatusControl } from '../components/StatusControl'
-import { attendanceStats, safetyZone } from '../lib/attendanceMath'
+import {
+  attendanceStats,
+  safetyZone,
+  standings,
+  type AttendanceStats
+} from '../lib/attendanceMath'
 import { formatDayMonth, formatWeekday, keyToDate } from '../lib/date'
 import { sessionsForDate } from '../lib/schedule'
 import { useStore } from '../lib/store'
@@ -14,19 +19,10 @@ import { useTodayKey } from '../lib/useTodayKey'
 import { SUBJECT_TYPE_LABELS, type AttendanceRecord } from '../types'
 
 export function Today() {
-  const { subjects, records, profile, setRecords } = useStore()
+  const { subjects, records, setRecords } = useStore()
   const date = useTodayKey()
 
-  const target = profile?.defaultTargetPercentage ?? 75
   const active = useMemo(() => subjects.filter((subject) => !subject.isArchived), [subjects])
-
-  const overall = useMemo(() => {
-    const ids = new Set(active.map((subject) => subject.id))
-    return attendanceStats(
-      records.filter((record) => ids.has(record.subjectId)),
-      target,
-    )
-  }, [active, records, target])
 
   const sessions = useMemo(() => sessionsForDate(active, records, date), [active, records, date])
 
@@ -41,11 +37,14 @@ export function Today() {
   const unmarked = sessions.filter((slot) => !marked.has(`${slot.subject.id}|${slot.sessionIndex}`))
 
   /*
-    Both figures below come from the same per-subject pass. Computing them
-    separately meant walking every record twice for every subject on each
-    render, to reach two halves of one answer.
+    Colleges hold each subject to its own target, so everything here is per
+    subject. A pooled percentage looked reassuring while one subject sat below
+    the line, and summing spare classes across subjects promised absences that
+    no single subject could actually afford.
+
+    Every figure comes from one pass over the records.
   */
-  const { atRisk, spare } = useMemo(() => {
+  const { statsFor, lowest, leastSpare, below } = useMemo(() => {
     const bySubject = new Map<string, typeof records>()
     for (const record of records) {
       const list = bySubject.get(record.subjectId)
@@ -54,24 +53,16 @@ export function Today() {
     }
 
     const scored = active.map((subject) => ({
-      subject,
-      stats: attendanceStats(bySubject.get(subject.id) ?? [], subject.targetPercentage)
+      item: subject,
+      stats: attendanceStats(bySubject.get(subject.id) ?? [], subject.targetPercentage),
+      target: subject.targetPercentage
     }))
 
     return {
-      atRisk: scored
-        .filter(
-          ({ subject, stats }) =>
-            stats.percentage !== null && stats.percentage < subject.targetPercentage
-        )
-        .sort((a, b) => (a.stats.percentage ?? 0) - (b.stats.percentage ?? 0)),
-      // Spare classes across everything still on target — the one number that
-      // answers "can I skip today".
-      spare: scored.reduce((total, { stats }) => total + (stats.bunkable ?? 0), 0)
+      statsFor: new Map(scored.map((entry) => [entry.item.id, entry.stats])),
+      ...standings(scored)
     }
   }, [active, records])
-
-  const zone = safetyZone(overall.percentage, target)
 
   const markRest = () =>
     void setRecords(
@@ -94,41 +85,46 @@ export function Today() {
       */}
       <div className="lg:flex lg:flex-row-reverse lg:items-start lg:gap-8">
         <div className="lg:sticky lg:top-0 lg:w-[20rem] lg:shrink-0 lg:space-y-3">
-          {/* Overall standing, as the pill readout from the reference panel. */}
-          <Panel className="flex items-center gap-4 px-5 py-4">
-            <Gauge percentage={overall.percentage} zone={zone} />
-            <div className="min-w-0 flex-1">
-              <p className="label">Overall</p>
-              <p className="readout mt-2 text-[1.75rem]">
-                {overall.percentage === null ? '––' : overall.percentage}
-                <span className="text-[0.5em] text-ink-faint">%</span>
-              </p>
-              <div className="mt-3">
-                <Meter percentage={overall.percentage} target={target} zone={zone} />
-              </div>
-              <p className="mt-2.5 font-mono text-[0.62rem] tracking-[0.08em] text-ink-faint uppercase">
-                {overall.total === 0
-                  ? 'No classes yet'
-                  : `${overall.present}/${overall.total} · target ${target}%`}
-              </p>
-            </div>
+          {/*
+            The subject closest to (or furthest below) its own target. That one
+            subject, not an average, decides whether someone is safe.
+          */}
+          <Panel className="px-5 py-4">
+            {lowest ? (
+              <Link to={`/subjects/${lowest.item.id}`} className="block active:opacity-60">
+                <LowestSubject
+                  label={`Lowest · ${lowest.item.code || lowest.item.name}`}
+                  stats={lowest.stats}
+                  target={lowest.target}
+                />
+              </Link>
+            ) : (
+              <LowestSubject label="Lowest subject" stats={null} target={75} />
+            )}
           </Panel>
 
           <div className="mt-3 grid grid-cols-2 gap-3 lg:mt-0">
             <Panel className="px-5 py-4">
               <Readout
-                label="Can miss"
-                value={String(spare)}
-                suffix={spare === 1 ? 'class' : 'classes'}
-                tone={spare === 0 ? 'muted' : 'accent'}
+                label="Least spare"
+                value={leastSpare ? String(leastSpare.stats.bunkable) : '––'}
+                suffix={leastSpare?.stats.bunkable === 1 ? 'class' : 'classes'}
+                tone={leastSpare && leastSpare.stats.bunkable ? 'accent' : 'muted'}
               />
+              <p className="mt-1.5 truncate font-mono text-[0.6rem] tracking-[0.08em] text-ink-faint uppercase">
+                {leastSpare
+                  ? leastSpare.item.code || leastSpare.item.name
+                  : lowest
+                    ? 'None on target'
+                    : 'No classes yet'}
+              </p>
             </Panel>
             <Panel className="px-5 py-4">
               <Readout
                 label="Below target"
-                value={String(atRisk.length)}
-                suffix={atRisk.length === 1 ? 'subject' : 'subjects'}
-                tone={atRisk.length > 0 ? 'danger' : 'muted'}
+                value={String(below.length)}
+                suffix={below.length === 1 ? 'subject' : 'subjects'}
+                tone={below.length > 0 ? 'danger' : 'muted'}
               />
             </Panel>
           </div>
@@ -190,6 +186,7 @@ export function Today() {
                         <p className="mt-1 truncate font-mono text-[0.6rem] tracking-[0.08em] text-ink-faint uppercase">
                           {SUBJECT_TYPE_LABELS[slot.subject.subjectType]}
                           {slot.sessionIndex > 1 ? ` · S${slot.sessionIndex}` : ''}
+                          <MarginNote stats={statsFor.get(slot.subject.id)} />
                         </p>
                       </div>
                       <StatusControl
@@ -215,10 +212,10 @@ export function Today() {
             )}
           </div>
 
-          {atRisk.length > 0 ? (
+          {below.length > 0 ? (
             <div className="mt-7">
               <SectionHead label="Needs attention" />
-              {atRisk.map(({ subject, stats }) => (
+              {below.map(({ item: subject, stats }) => (
                 <Link key={subject.id} to={`/subjects/${subject.id}`} className="block">
                   <DataRow className="hover-row md:px-2">
                     <span
@@ -246,5 +243,60 @@ export function Today() {
         </div>
       </div>
     </>
+  )
+}
+
+/** The gauge readout for the subject that decides whether someone is safe. */
+function LowestSubject({
+  label,
+  stats,
+  target
+}: {
+  label: string
+  stats: AttendanceStats | null
+  target: number
+}) {
+  const percentage = stats?.percentage ?? null
+  const zone = safetyZone(percentage, target)
+
+  return (
+    <div className="flex items-center gap-4">
+      <Gauge percentage={percentage} zone={zone} />
+      <div className="min-w-0 flex-1">
+        <p className="label truncate">{label}</p>
+        <p className="readout mt-2 text-[1.75rem]">
+          {percentage ?? '––'}
+          <span className="text-[0.5em] text-ink-faint">%</span>
+        </p>
+        <div className="mt-3">
+          <Meter percentage={percentage} target={target} zone={zone} />
+        </div>
+        <p className="mt-2.5 truncate font-mono text-[0.62rem] tracking-[0.08em] text-ink-faint uppercase">
+          {stats ? `${stats.present}/${stats.total} · target ${target}%` : 'No classes yet'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The subject's own margin, beside each of today's classes: the figure that
+ * actually answers "can I skip this one".
+ */
+function MarginNote({ stats }: { stats: AttendanceStats | undefined }) {
+  if (!stats || stats.total === 0) return null
+
+  if (stats.bunkable !== null) {
+    return (
+      <span className={stats.bunkable > 0 ? 'text-accent' : undefined}>
+        {` · ${stats.bunkable} spare`}
+      </span>
+    )
+  }
+
+  return (
+    <span className="text-danger">
+      {stats.comeback === null ? ' · unreachable' : ` · attend next ${stats.comeback}`}
+    </span>
   )
 }

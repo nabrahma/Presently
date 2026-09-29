@@ -77,7 +77,7 @@ export function Subjects() {
           title={showArchived ? 'Nothing archived' : 'No subjects yet'}
           text={
             showArchived
-              ? 'Archived subjects keep their history but stop counting toward your overall percentage.'
+              ? 'Archived subjects keep their history but leave your daily check-in and summary.'
               : 'Add each subject once, with the days it meets. Everything else follows from that.'
           }
           action={
