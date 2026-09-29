@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +40,13 @@ const h = vi.hoisted(() => {
       writesFail: false,
       /** Fails the next request once with an expired-token error. */
       expireNextToken: false,
+      /** The error that expireNextToken produces. */
+      expiredError: { code: 'PGRST301', message: 'JWT expired' } as Record<string, string>,
+      /**
+       * Until this moment every request fails as PostgREST does when the
+       * token's `iat` is ahead of the database's clock.
+       */
+      earlyUntil: 0,
       /** Seconds until the access token expires, as reported by getSession. */
       expiresIn: 3600,
       refreshes: 0
@@ -60,10 +67,14 @@ vi.mock('../lib/supabaseClient', async () => {
     expires_at: Math.floor(Date.now() / 1000) + h.server.expiresIn
   })
 
-  const expired = { code: 'PGRST301', message: 'JWT expired' }
+  const early = { code: 'PGRST303', message: 'JWT issued at future' }
   const offline = { message: 'Failed to fetch' }
 
   const wrap = (value: unknown) => Promise.resolve({ data: value, error: null })
+
+  /** Reads go through the same token checks as writes. */
+  const read = (value: unknown) =>
+    Date.now() < h.server.earlyUntil ? { data: null, error: early } : { data: value, error: null }
 
   const table = (name: string) => {
     let produced: unknown[] = []
@@ -79,9 +90,10 @@ vi.mock('../lib/supabaseClient', async () => {
 
     /** Applies a write, or returns the error a test has armed. */
     const guard = <T,>(apply: () => T): { data: T | null; error: unknown } => {
+      if (Date.now() < h.server.earlyUntil) return { data: null, error: early }
       if (h.server.expireNextToken) {
         h.server.expireNextToken = false
-        return { data: null, error: expired }
+        return { data: null, error: h.server.expiredError }
       }
       if (h.server.writesFail) return { data: null, error: offline }
       return { data: apply(), error: null }
@@ -132,8 +144,8 @@ vi.mock('../lib/supabaseClient', async () => {
           eq: () => chain,
           in: () => chain,
           order: () => chain,
-          maybeSingle: () => wrap(name === 'profiles' ? h.server.profile : null),
-          then: (resolve: (value: unknown) => void) => resolve({ data: rowsFor(), error: null })
+          maybeSingle: () => Promise.resolve(read(name === 'profiles' ? h.server.profile : null)),
+          then: (resolve: (value: unknown) => void) => resolve(read(rowsFor()))
         }
         return chain
       },
@@ -270,12 +282,17 @@ beforeEach(() => {
   }
   server.writesFail = false
   server.expireNextToken = false
+  server.expiredError = { code: 'PGRST301', message: 'JWT expired' }
+  server.earlyUntil = 0
   server.expiresIn = 3600
   server.refreshes = 0
   seedAccount()
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  vi.useRealTimers()
+  cleanup()
+})
 
 describe('marking attendance', () => {
   it('reaches the server straight away', async () => {
@@ -400,6 +417,35 @@ describe('an expired token', () => {
     expect(screen.queryByText(/could not refresh/i)).toBeNull()
   })
 
+  it('is recognised in the shape PostgREST 12 and later report it', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByText('Overall')
+
+    server.expiredError = { code: 'PGRST303', message: 'JWT expired' }
+    server.expireNextToken = true
+    await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
+
+    await waitFor(() => expect(server.records).toHaveLength(1))
+    expect(screen.queryByText(/did not sync/i)).toBeNull()
+  })
+
+  it('is refreshed when the server says so, even if the device clock disagrees', async () => {
+    // A phone whose clock runs behind believes its token has most of an hour
+    // left. Only the server knows otherwise, and a retry with the same token
+    // would fail the same way forever.
+    const user = userEvent.setup()
+    mount()
+    await screen.findByText('Overall')
+    server.refreshes = 0
+
+    server.expireNextToken = true
+    await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
+
+    await waitFor(() => expect(server.records).toHaveLength(1))
+    expect(server.refreshes).toBe(1)
+  })
+
   it('leaves the mark queued when the retry also fails', async () => {
     const user = userEvent.setup()
     mount()
@@ -409,6 +455,62 @@ describe('an expired token', () => {
     await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
 
     await waitFor(() => expect(readOutbox(USER.id).records.length).toBeGreaterThan(0))
+  })
+})
+
+describe('a token the database says was issued in its future', () => {
+  it('is waited out rather than reported or refreshed', async () => {
+    const user = userEvent.setup()
+    mount()
+    await screen.findByText('Overall')
+    server.refreshes = 0
+
+    server.earlyUntil = Date.now() + 1_000
+    await user.click(screen.getAllByRole('button', { name: 'Present' })[0])
+
+    await waitFor(() => expect(server.records).toHaveLength(1), { timeout: 5_000 })
+    expect(screen.queryByText(/did not sync/i)).toBeNull()
+    // A new token would be newer still, and just as early.
+    expect(server.refreshes).toBe(0)
+  })
+
+  it('is retried in the background when it outlasts the inline waits', async () => {
+    mount()
+    await screen.findByText('Overall')
+
+    vi.useFakeTimers()
+    server.earlyUntil = Date.now() + 10_000
+    fireEvent.click(screen.getAllByRole('button', { name: 'Present' })[0])
+
+    // Inline waits give up after a few seconds; the mark stays queued.
+    await act(() => vi.advanceTimersByTimeAsync(6_000))
+    expect(server.records).toHaveLength(0)
+    expect(readOutbox(USER.id).records.length).toBeGreaterThan(0)
+    expect(screen.queryByText(/did not sync/i)).toBeNull()
+
+    // Nobody reopens the app, yet it still arrives.
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    expect(server.records).toHaveLength(1)
+    expect(readOutbox(USER.id).records).toHaveLength(0)
+  })
+
+  it('keeps a newly signed-in device loading instead of sending it to setup', async () => {
+    // A fresh sign-in holds the newest possible token and nothing cached, so
+    // this is exactly where a failed first load used to land a returning user
+    // in onboarding to recreate their subjects.
+    window.localStorage.clear()
+    vi.useFakeTimers()
+    server.earlyUntil = Date.now() + 10_000
+    mount()
+
+    await act(() => vi.advanceTimersByTimeAsync(6_000))
+    expect(screen.getByText('Loading')).toBeTruthy()
+    expect(screen.queryByText(/add your subjects/i)).toBeNull()
+    expect(screen.queryByText(/could not refresh/i)).toBeNull()
+
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    vi.useRealTimers()
+    await screen.findByText('Overall')
   })
 })
 

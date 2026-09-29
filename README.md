@@ -161,7 +161,9 @@ The queue holds *references*, not snapshots. A flush sends whatever the record l
 
 Attendance rows are keyed on `(subject, date, session)`. Ids come from the database and the local id is reconciled with the server's on the first successful write, which is what makes deleting a freshly created record reliable.
 
-Access tokens expire while an installed app sits closed. The session is refreshed before any query on launch and on resume, and a write rejected for an aged-out token is refreshed and retried once rather than reported — that class of failure is routine, not something worth interrupting anyone for.
+Access tokens expire while an installed app sits closed. The session is refreshed before any query on launch and on resume, and a request the server rejects as expired is refreshed and retried once rather than reported — that class of failure is routine, not something worth interrupting anyone for. The refresh is forced whenever the server says so, because the device's own clock can be wrong in the direction that hides it.
+
+The opposite also happens. PostgREST refuses a token whose issue time is ahead of the database's clock ("JWT issued at future"), which lands right after a sign-in or refresh. Refreshing cannot help — the new token is newer still — so those requests wait a few seconds and repeat, and anything still refused stays queued and is retried in the background. A newly signed-in device with nothing cached stays on its loading screen through this rather than showing an empty account and sending a returning user into setup.
 
 ## Checks
 

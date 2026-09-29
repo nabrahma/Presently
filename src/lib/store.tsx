@@ -23,8 +23,10 @@ import {
   describeError,
   ensureFreshSession,
   isCloudEnabled,
-  isExpiredToken,
-  supabase
+  isTokenFault,
+  supabase,
+  tokenFault,
+  withValidToken
 } from './supabaseClient'
 import {
   EMPTY_DATA,
@@ -84,6 +86,13 @@ const clamp = (value: number, min: number, max: number, fallback: number) =>
 
 const recordKey = (subjectId: string, recordDate: string, sessionIndex: number) =>
   `${subjectId}|${recordDate}|${sessionIndex}`
+
+/**
+ * How long to wait before trying again after the database called a token
+ * early. The gap is its clock lagging the auth server's, and it closes as the
+ * token ages, so a single later attempt is all it takes.
+ */
+const EARLY_TOKEN_RETRY_MS = 15_000
 
 /* -------------------------------------------------------------------------- */
 /* Row mapping                                                                 */
@@ -223,6 +232,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const markDirty = commitOutbox
 
+  /* --- background retry -------------------------------------------------- */
+
+  /*
+    A token the database called early cannot be fixed by the client, only
+    waited out. Rather than leave the work until the next resume or reconnect,
+    one retry is scheduled. `load` also covers everything `flush` does.
+  */
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryKindRef = useRef<'flush' | 'load'>('flush')
+  const retryRef = useRef<(kind: 'flush' | 'load') => void>(() => undefined)
+
+  const cancelRetry = useCallback(() => {
+    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current)
+    retryTimerRef.current = null
+    retryKindRef.current = 'flush'
+  }, [])
+
+  const scheduleRetry = useCallback((kind: 'flush' | 'load') => {
+    if (kind === 'load') retryKindRef.current = 'load'
+    if (retryTimerRef.current !== null) return
+
+    const uid = userIdRef.current
+    retryTimerRef.current = setTimeout(() => {
+      const pending = retryKindRef.current
+      retryTimerRef.current = null
+      retryKindRef.current = 'flush'
+      // Signed out or switched accounts while waiting: nothing left to do.
+      if (uid && uid === userIdRef.current) retryRef.current(pending)
+    }, EARLY_TOKEN_RETRY_MS)
+  }, [])
+
+  useEffect(() => cancelRetry, [cancelRetry])
+
   /* --- remote writes ----------------------------------------------------- */
 
   /**
@@ -244,26 +286,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!client || !uid) return true // guest and demo modes are local by design
 
       try {
-        const { error } = await run(client, uid)
-        if (!error) return true
-
-        if (!isExpiredToken(error)) throw error
-        if (!(await ensureFreshSession(client))) throw error
-
-        const retry = await run(client, uid)
-        if (retry.error) throw retry.error
+        const { error } = await withValidToken(client, () => run(client, uid))
+        if (error) throw error
         return true
       } catch (error) {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           // Offline is expected, not an error worth interrupting anyone for.
           return false
         }
-        if (isExpiredToken(error)) return false // recoverable; the retry will come
+        // Recoverable: it stays queued and the retry will come.
+        if (tokenFault(error) === 'early') scheduleRetry('flush')
+        if (isTokenFault(error)) return false
         toast.error(`${description} did not sync`, { description: describeError(error) })
         return false
       }
     },
-    []
+    [scheduleRetry]
   )
 
   const pushSubject = useCallback(
@@ -330,13 +368,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           .select('id, subject_id, record_date, session_index')
 
       try {
-        let response = await send()
-
-        // A token that aged out while the app was closed is refreshed and the
-        // write repeated, rather than surfaced as a failure.
-        if (response.error && isExpiredToken(response.error)) {
-          if (await ensureFreshSession(client)) response = await send()
-        }
+        // A token that aged out while the app was closed, or that the database
+        // thinks was issued in its future, is recovered and the write repeated
+        // rather than surfaced as a failure.
+        const response = await withValidToken(client, send)
         if (response.error) throw response.error
 
         const serverIds = new Map<string, string>()
@@ -373,13 +408,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           })
         }))
       } catch (error) {
-        if (isExpiredToken(error)) return // stays queued for the next flush
+        if (tokenFault(error) === 'early') scheduleRetry('flush')
+        if (isTokenFault(error)) return // stays queued for the next flush
         if (typeof navigator !== 'undefined' && navigator.onLine) {
           toast.error('Attendance did not sync', { description: describeError(error) })
         }
       }
     },
-    [markDirty]
+    [markDirty, scheduleRetry]
   )
 
   /* --- flush ------------------------------------------------------------- */
@@ -399,21 +435,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const current = dataRef.current
 
+    /** True when the request went through; an early token also books a retry. */
+    const sent = (error: unknown) => {
+      if (tokenFault(error) === 'early') scheduleRetry('flush')
+      return !error
+    }
+
     for (const id of pending.deletedRecords) {
-      const { error } = await client.from('attendance_records').delete().eq('id', id)
-      if (error) return
+      const { error } = await withValidToken(client, () =>
+        client.from('attendance_records').delete().eq('id', id)
+      )
+      if (!sent(error)) return
       markDirty((previous) => ({ ...previous, deletedRecords: without(previous.deletedRecords, id) }))
     }
 
     for (const id of pending.deletedSubjects) {
-      const { error } = await client.from('subjects').delete().eq('id', id)
-      if (error) return
+      const { error } = await withValidToken(client, () =>
+        client.from('subjects').delete().eq('id', id)
+      )
+      if (!sent(error)) return
       markDirty((previous) => ({ ...previous, deletedSubjects: without(previous.deletedSubjects, id) }))
     }
 
     if (pending.profile && current.profile) {
-      const { error } = await pushProfileRemote(client, uid, current.profile)
-      if (!error) markDirty((previous) => ({ ...previous, profile: false }))
+      const profile = current.profile
+      const { error } = await withValidToken(client, () => pushProfileRemote(client, uid, profile))
+      if (sent(error)) markDirty((previous) => ({ ...previous, profile: false }))
     }
 
     for (const id of pending.subjects) {
@@ -430,7 +477,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .filter((record): record is AttendanceRecord => Boolean(record))
 
     if (records.length > 0) await pushRecords(records)
-  }, [markDirty, pushRecords, pushSubject])
+  }, [markDirty, pushRecords, pushSubject, scheduleRetry])
 
   /* --- load -------------------------------------------------------------- */
 
@@ -440,6 +487,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!client) return
 
       setSyncing(true)
+      let waitingOnToken = false
       try {
         // An app reopened after a long gap starts with a dead access token.
         // Refreshing before any query is what stops the JWT error on launch.
@@ -448,24 +496,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Unsent work goes first, so a fetch can never overwrite it.
         await flush()
 
-        const [profileResult, subjectsResult, recordsResult] = await Promise.all([
-          client.from('profiles').select('*').eq('id', uid).maybeSingle(),
-          client.from('subjects').select('*').eq('user_id', uid).order('created_at'),
-          client.from('attendance_records').select('*').eq('user_id', uid)
-        ])
-
-        const failure = profileResult.error ?? subjectsResult.error ?? recordsResult.error
-        if (failure) throw failure
+        // Read as one unit, so a refused token is recovered once for all three
+        // rather than three times over.
+        const fetched = await withValidToken(client, async () => {
+          const [profileResult, subjectsResult, recordsResult] = await Promise.all([
+            client.from('profiles').select('*').eq('id', uid).maybeSingle(),
+            client.from('subjects').select('*').eq('user_id', uid).order('created_at'),
+            client.from('attendance_records').select('*').eq('user_id', uid)
+          ])
+          return {
+            profileResult,
+            subjectsResult,
+            recordsResult,
+            error: profileResult.error ?? subjectsResult.error ?? recordsResult.error
+          }
+        })
+        if (fetched.error) throw fetched.error
+        const { profileResult, subjectsResult, recordsResult } = fetched
 
         const subjectRows = (subjectsResult.data ?? []) as Row[]
         const subjectIds = subjectRows.map((row) => String(row.id))
 
         let scheduleRows: Row[] = []
         if (subjectIds.length > 0) {
-          const schedules = await client
-            .from('subject_schedule')
-            .select('*')
-            .in('subject_id', subjectIds)
+          const schedules = await withValidToken(client, () =>
+            client.from('subject_schedule').select('*').in('subject_id', subjectIds)
+          )
           if (schedules.error) throw schedules.error
           scheduleRows = (schedules.data ?? []) as Row[]
         }
@@ -517,16 +573,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         commitData(remote)
       } catch (error) {
-        if (typeof navigator !== 'undefined' && navigator.onLine && !isExpiredToken(error)) {
+        if (tokenFault(error) === 'early') {
+          waitingOnToken = true
+          scheduleRetry('load')
+        }
+        if (typeof navigator !== 'undefined' && navigator.onLine && !isTokenFault(error)) {
           toast.error('Could not refresh your attendance', { description: describeError(error) })
         }
       } finally {
         setSyncing(false)
-        setHydrated(true)
+        // A device with nothing cached keeps its loading state while the retry
+        // is pending. Showing an empty account instead is what sends someone
+        // who just signed in on a new phone back through onboarding, where
+        // they recreate subjects they already have.
+        if (!waitingOnToken || dataRef.current.profile) setHydrated(true)
       }
     },
-    [commitData, flush]
+    [commitData, flush, scheduleRetry]
   )
+
+  useEffect(() => {
+    retryRef.current = (kind) => {
+      const uid = userIdRef.current
+      if (!uid) return
+      void (kind === 'load' ? loadAccount(uid) : flush())
+    }
+  }, [flush, loadAccount])
 
   /* --- session ----------------------------------------------------------- */
 
@@ -545,6 +617,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const enterGuest = () => {
       if (cancelled) return
+      cancelRetry()
       const demo = readMode() === 'demo'
       commitAccount(GUEST_ACCOUNT, null, demo)
       setEmail(null)
@@ -608,7 +681,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelled = true
       listener.subscription.unsubscribe()
     }
-  }, [commitAccount, commitData, commitOutbox, loadAccount])
+  }, [cancelRetry, commitAccount, commitData, commitOutbox, loadAccount])
 
   /* --- connectivity ------------------------------------------------------ */
 
@@ -832,12 +905,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // Subjects cascade to schedules and records; the profile is reset rather
       // than deleted so the account keeps working.
-      const removal = await client.from('subjects').delete().eq('user_id', uid)
-      const leftovers = await client.from('attendance_records').delete().eq('user_id', uid)
-      const reset = await client
-        .from('profiles')
-        .update({ branch: null, semester: null, default_target_percentage: 75 })
-        .eq('id', uid)
+      const removal = await withValidToken(client, () =>
+        client.from('subjects').delete().eq('user_id', uid)
+      )
+      const leftovers = await withValidToken(client, () =>
+        client.from('attendance_records').delete().eq('user_id', uid)
+      )
+      const reset = await withValidToken(client, () =>
+        client
+          .from('profiles')
+          .update({ branch: null, semester: null, default_target_percentage: 75 })
+          .eq('id', uid)
+      )
 
       const failure = removal.error ?? leftovers.error ?? reset.error
       if (failure) {
@@ -855,6 +934,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback<Store['signOut']>(async () => {
     const previousAccount = accountRef.current
+    cancelRetry()
 
     if (supabase) {
       try {
@@ -878,7 +958,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     commitData(EMPTY_DATA)
     commitOutbox(EMPTY_OUTBOX)
     setHydrated(true)
-  }, [commitAccount, commitData, commitOutbox])
+  }, [cancelRetry, commitAccount, commitData, commitOutbox])
 
   const startDemo = useCallback<Store['startDemo']>(() => {
     writeMode('demo')
