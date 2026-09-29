@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { CalendarDays, CircleSlash, House, Layers, Settings2 } from 'lucide-react'
 import { Booting } from './Booting'
 import { cn } from '../lib/cn'
@@ -119,21 +119,20 @@ export function Shell() {
           {/* Content stops widening well before the viewport does; a data row
               stretched across 1600px is unreadable. */}
           <div className="mx-auto w-full max-w-[30rem] md:max-w-[42rem] lg:max-w-[72rem]">
+            {/*
+              Screens swap instantly, as a native tab bar does; the sliding
+              indicator is the motion. A cross-fade here made the old screen
+              finish fading out before the new one could start, and rendered
+              the new screen twice (the outgoing layer's Outlet already shows
+              the new route). On a phone that was up to most of a second
+              between the indicator moving and the screen appearing, long
+              enough that people tapped again thinking the first tap missed.
+            */}
             <Suspense fallback={<Booting />}>
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={location.pathname}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
-                >
-                  <Outlet />
-                  {/* Clears the dock so the last row is never trapped behind it. */}
-                  <div aria-hidden className="h-6 md:h-10" />
-                </motion.div>
-              </AnimatePresence>
+              <Outlet />
             </Suspense>
+            {/* Clears the dock so the last row is never trapped behind it. */}
+            <div aria-hidden className="h-6 md:h-10" />
           </div>
         </main>
       </div>

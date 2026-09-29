@@ -1,4 +1,4 @@
-import { Suspense, lazy, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Booting } from './components/Booting'
 import { Shell } from './components/Shell'
@@ -12,12 +12,43 @@ import { useStore } from './lib/store'
 */
 const Auth = lazy(() => import('./screens/Auth').then((m) => ({ default: m.Auth })))
 const Onboarding = lazy(() => import('./screens/Onboarding').then((m) => ({ default: m.Onboarding })))
-const Subjects = lazy(() => import('./screens/Subjects').then((m) => ({ default: m.Subjects })))
-const SubjectDetail = lazy(() =>
-  import('./screens/SubjectDetail').then((m) => ({ default: m.SubjectDetail }))
-)
-const Calendar = lazy(() => import('./screens/Calendar').then((m) => ({ default: m.Calendar })))
-const Settings = lazy(() => import('./screens/Settings').then((m) => ({ default: m.Settings })))
+
+// The tabs' loaders are named so they can be warmed ahead of the first tap.
+const loadSubjects = () => import('./screens/Subjects')
+const loadSubjectDetail = () => import('./screens/SubjectDetail')
+const loadCalendar = () => import('./screens/Calendar')
+const loadSettings = () => import('./screens/Settings')
+
+const Subjects = lazy(() => loadSubjects().then((m) => ({ default: m.Subjects })))
+const SubjectDetail = lazy(() => loadSubjectDetail().then((m) => ({ default: m.SubjectDetail })))
+const Calendar = lazy(() => loadCalendar().then((m) => ({ default: m.Calendar })))
+const Settings = lazy(() => loadSettings().then((m) => ({ default: m.Settings })))
+
+/**
+ * Fetches every tab's code once the launch has painted, so the first visit to
+ * a tab does not wait on the network after the indicator has already moved.
+ * Launch stays as light as before; this runs only when the browser is idle.
+ */
+function usePreloadedTabs() {
+  useEffect(() => {
+    // Tests render every screen directly; there is nothing to warm there.
+    if (import.meta.env.MODE === 'test') return
+
+    const warm = () => {
+      for (const load of [loadSubjects, loadCalendar, loadSettings, loadSubjectDetail]) {
+        void load().catch(() => undefined) // a failed prefetch just means a normal load later
+      }
+    }
+
+    // Safari has no requestIdleCallback.
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(warm, { timeout: 3000 })
+      return () => window.cancelIdleCallback(handle)
+    }
+    const timer = window.setTimeout(warm, 1200)
+    return () => window.clearTimeout(timer)
+  }, [])
+}
 
 /**
  * Access control has three distinct answers, and collapsing any two of them is
@@ -34,6 +65,12 @@ function Protected({ children }: { children: ReactNode }) {
   if (cloud && !userId && !isDemo) return <Navigate to="/auth" replace />
   if (!profile?.onboarded) return <Navigate to="/onboarding" replace />
 
+  return <Warmed>{children}</Warmed>
+}
+
+/** Mounted only once someone is inside the app, so sign-in stays lean. */
+function Warmed({ children }: { children: ReactNode }) {
+  usePreloadedTabs()
   return <>{children}</>
 }
 

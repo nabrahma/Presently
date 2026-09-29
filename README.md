@@ -238,7 +238,7 @@ supabase/migrations/   versioned database schema
 
 <br />
 
-Presently is installed and opened for a few seconds a day, so it is built as an app rather than a page. The viewport is pinned and exactly one region scrolls. The header and navigation are a layout route that mounts once, so moving between tabs slides an indicator instead of repainting the chrome. Safe areas are respected, and inputs are 16px so focusing one never zooms the layout.
+Presently is installed and opened for a few seconds a day, so it is built as an app rather than a page. The viewport is pinned and exactly one region scrolls. The header and navigation are a layout route that mounts once, so moving between tabs slides an indicator instead of repainting the chrome. The screens themselves swap instantly, as a native tab bar does, and every tab's code is fetched in the background after launch so even a first visit does not wait on the network. Safe areas are respected, and inputs are 16px so focusing one never zooms the layout.
 
 The look is a single committed one: black canvas, one green accent, hairline outlines and mono numerals. There is no theme switcher, because there is no second theme to switch to.
 
